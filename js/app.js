@@ -26,6 +26,10 @@
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>',
     swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4L3 8l4 4"/><path d="M3 8h14"/><path d="M17 20l4-4-4-4"/><path d="M21 16H7"/></svg>',
+    download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>',
+    share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 00-1 1v8a1 1 0 001 1h14a1 1 0 001-1v-8a1 1 0 00-1-1h-1"/></svg>',
+    addbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>',
+    dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>',
     clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
   });
 
@@ -194,6 +198,7 @@
       '<p class="subtitle">Tap your name to sign in.</p></div>' +
       (msg ? '<div class="notice info">' + esc(msg) + '</div>' : '') +
       '<div class="agent-list" id="agentList">' + agentListHtml() + '</div>' +
+      installBtnHtml() +
       '<div class="home-foot"><span>' + APP_LABEL + '</span>' + (LS.get('adminSession', null) ? '<a class="link" href="admin.html">Dashboard</a>' : '<span></span>') + '</div>' +
       '</section>');
     root.onclick = function (e) {
@@ -373,6 +378,7 @@
       '<button class="cta-card" data-act="new"><span class="cta-icon">' + I.plus + '</span><span><span class="cta-title">New Lead</span><br><span class="cta-sub">Name & phone number</span></span></button>' +
       '<button class="search-fake" data-act="search">' + I.search + '<span>Search by name or phone</span></button>' +
       '<div class="tiles">' + tile(1, I.users) + tile(2, I.check) + tile(3, I.star) + '</div>' +
+      installBtnHtml() +
       '<div class="home-foot"><span>' + c.today + ' added today · ' + APP_LABEL + '</span>' +
       (session.isAdmin ? '<a class="link" href="admin.html">Back to dashboard</a>' : '<button class="link" data-act="logout">Log out</button>') + '</div>' +
       '</section>');
@@ -1189,6 +1195,63 @@
       onHardwareBack();
     });
   } catch (e) { /* ignore */ }
+
+  /* ============================ INSTALL (download) ============================ */
+  var installPrompt = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();          // keep it for our own "Download the app" button
+    installPrompt = e;
+  });
+  window.addEventListener('appinstalled', function () {
+    installPrompt = null;
+    var b = document.querySelector('.install-btn');
+    if (b) b.remove();
+    K.toast('App installed ✓ Open it from your home screen.', 4000);
+  });
+  function isStandalone() {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  }
+  function isIOS() {
+    return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+  function installBtnHtml() {
+    if (isStandalone()) return '';
+    return '<button class="install-btn" data-install>' +
+      '<img src="img/roadshow-180.png" alt="" width="44" height="44">' +
+      '<span><b>Download the app</b><br><span class="s">Add KATAL Roadshow to your home screen</span></span>' +
+      '<span class="dl">' + I.download + '</span></button>';
+  }
+  function installApp() {
+    if (installPrompt) {
+      var p = installPrompt;
+      installPrompt = null;
+      p.prompt();
+      if (p.userChoice) p.userChoice.then(function (c) { if (c && c.outcome !== 'accepted') installPrompt = p; }, function () { /* ignore */ });
+      return;
+    }
+    installHelp();
+  }
+  function installHelp() {
+    var ios = isIOS();
+    var step = function (n, html) { return '<li><span class="n">' + n + '</span><span>' + html + '</span></li>'; };
+    var steps = ios
+      ? step(1, 'Open this page in <b>Safari</b>.') +
+        step(2, 'Tap the Share button <span class="ic-inline">' + I.share + '</span> at the bottom of the screen.') +
+        step(3, 'Scroll down and tap <b>Add to Home Screen</b> <span class="ic-inline">' + I.addbox + '</span>, then <b>Add</b>.')
+      : step(1, 'Tap the menu <span class="ic-inline">' + I.dots + '</span> at the top right of Chrome.') +
+        step(2, 'Tap <b>Install app</b> or <b>Add to Home screen</b>.') +
+        step(3, 'Tap <b>Install</b>.');
+    var bg = document.createElement('div');
+    bg.className = 'sheet-bg';
+    bg.innerHTML = '<div class="sheet install-sheet" role="dialog" aria-modal="true">' +
+      '<img src="img/roadshow-180.png" alt="" width="72" height="72">' +
+      '<h3>Download the app</h3><p>Two taps and KATAL Roadshow is on your home screen.</p>' +
+      '<ol class="steps">' + steps + '</ol>' +
+      '<button class="btn btn-primary btn-block" data-close>Got it</button></div>';
+    bg.addEventListener('click', function (e) { if (e.target === bg || e.target.closest('[data-close]')) bg.remove(); });
+    document.body.appendChild(bg);
+  }
+  root.addEventListener('click', function (e) { if (e.target.closest('[data-install]')) installApp(); });
 
   /* ================================ BOOT ================================ */
   // one-time clean-up of data from v1.0 (old single-flow drafts)
