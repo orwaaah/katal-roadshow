@@ -1,0 +1,12 @@
+const assert = require('assert');
+const { makeContext } = require('./gas-mock');
+const state = { quiet: true };
+const G = makeContext(state);
+const r = JSON.parse(G.doPost({ postData: { contents: '{"action":"agents"}' } }).getContent());
+assert.ok(r.ok, JSON.stringify(r));
+assert.strictEqual(r.agents.length, 3);
+assert.strictEqual(state.ss.getSheets().length, 7);
+assert.strictEqual(state.props.SETUP_DONE, '1.0.0');
+const g = JSON.parse(G.doGet({ parameter: {} }).getContent());
+assert.ok(g.ok);
+console.log('✅ auto-setup OK');

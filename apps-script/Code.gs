@@ -15,6 +15,7 @@
  ******************************************************************************/
 
 var APP_VERSION = '1.0.0';
+var SHEET_ID = '1ELfScsW78vcNN57lqePrrcCOu9e_HnqQuavI-wQ5tx4'; // the Google Sheet used as the database
 var TZ = 'Asia/Dubai';
 
 var T = {
@@ -92,7 +93,7 @@ var LEAD_RAW = 'Raw JSON';
  * Safe to run again: it never deletes your data. It only adds missing tabs/columns.
  */
 function setup() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('Open this script from the Google Sheet: Extensions → Apps Script.');
   PropertiesService.getScriptProperties().setProperty('SHEET_ID', ss.getId());
   secret_();
@@ -264,7 +265,25 @@ function onOpen() {
 
 /* ============================== WEB ENTRY POINTS ============================== */
 
+/** Builds the tabs automatically the first time the app is used (no need to run setup by hand). */
+function ensureSetup_() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('SETUP_DONE') === APP_VERSION) return;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(60000);
+  try {
+    if (props.getProperty('SETUP_DONE') === APP_VERSION) return;
+    var ss = ss_();
+    var missing = [T.SETTINGS, T.AGENTS, T.QUESTIONS, T.PROJECTS, T.UNITS, T.LEADS, T.NOTES].some(function (n) { return !ss.getSheetByName(n); });
+    if (missing) setup();
+    props.setProperty('SETUP_DONE', APP_VERSION);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function doGet(e) {
+  try { ensureSetup_(); } catch (err) { return out_({ ok: false, error: String(err && err.message || err), code: 'SETUP' }); }
   var p = (e && e.parameter) || {};
   if (p.action === 'agents') return out_(safe_(function () { return apiAgents_(); }));
   return out_({ ok: true, app: 'KATAL Roadshow API', version: APP_VERSION, time: new Date().toISOString() });
@@ -272,6 +291,7 @@ function doGet(e) {
 
 function doPost(e) {
   return out_(safe_(function () {
+    ensureSetup_();
     var body = (e && e.postData && e.postData.contents) || '{}';
     var req;
     try { req = JSON.parse(body); } catch (err) { throw fail_('Bad request', 'BAD_REQUEST'); }
@@ -680,7 +700,7 @@ function throttleClear_(k) { CacheService.getScriptCache().remove(throttleKey_(k
 /* ============================== SHEET READERS ============================== */
 
 function ss_() {
-  var id = PropertiesService.getScriptProperties().getProperty('SHEET_ID');
+  var id = SHEET_ID || PropertiesService.getScriptProperties().getProperty('SHEET_ID');
   if (id) {
     try { return SpreadsheetApp.openById(id); } catch (e) { /* fall through */ }
   }
