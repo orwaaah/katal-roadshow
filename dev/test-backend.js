@@ -10,7 +10,7 @@ const sheet = n => state.ss.getSheetByName(n);
 // setup twice (second run must not duplicate anything)
 G.setup();
 G.setup();
-assert.deepStrictEqual(state.ss.getSheets().map(s => s.name), ['Settings', 'Agents', 'Questions', 'Projects', 'Units', 'Leads', 'Notes']);
+assert.deepStrictEqual(state.ss.getSheets().map(s => s.name), ['Settings', 'Admins', 'Agents', 'Questions', 'Projects', 'Units', 'Leads', 'Notes']);
 assert.strictEqual(sheet('Questions').getLastRow(), 17);
 assert.strictEqual(sheet('Agents').getLastRow(), 4);
 const leadHeaders = sheet('Leads').data[0];
@@ -116,7 +116,7 @@ sheet('Agents').set(2, 2, '4444');
 assert.strictEqual(call('myLeads', { token: tok1 }).code, 'AUTH');
 
 // admin
-const adminPin = sheet('Settings').data[2][1];
+const adminPin = sheet('Admins').data[1][1];
 assert.ok(/^\d{6}$/.test(adminPin), 'random admin pin');
 assert.strictEqual(call('adminLogin', { pin: '000000' }).code, 'BAD_PIN');
 const at = call('adminLogin', { pin: adminPin }).token;

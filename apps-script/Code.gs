@@ -14,12 +14,12 @@
  *   The URL stays the same.
  ******************************************************************************/
 
-var APP_VERSION = '1.1.0';
+var APP_VERSION = '1.2.0';
 var SHEET_ID = '1ELfScsW78vcNN57lqePrrcCOu9e_HnqQuavI-wQ5tx4'; // the Google Sheet used as the database
 var TZ = 'Asia/Dubai';
 
 var T = {
-  SETTINGS: 'Settings', AGENTS: 'Agents', QUESTIONS: 'Questions',
+  SETTINGS: 'Settings', ADMINS: 'Admins', AGENTS: 'Agents', QUESTIONS: 'Questions',
   PROJECTS: 'Projects', UNITS: 'Units', LEADS: 'Leads', NOTES: 'Notes'
 };
 
@@ -32,6 +32,11 @@ var COLS = {
     ['key', 'Setting', 200, 'Do not rename the setting names in this column.'],
     ['value', 'Value', 260, 'Edit the values in this column.'],
     ['help', 'Help', 460, '']
+  ],
+  Admins: [
+    ['name', 'Admin Name', 220, 'Name of the person who can open the admin dashboard.'],
+    ['pin', 'PIN', 110, 'PIN (at least 4 digits) to open the admin dashboard. Every admin needs a different PIN.'],
+    ['active', 'Active', 90, 'Yes = can open the dashboard. No = blocked.']
   ],
   Agents: [
     ['name', 'Agent Name', 220, 'Name shown on the login screen.'],
@@ -92,7 +97,6 @@ var LEAD_DATES = ['time', 'invitedAt', 'confirmedAt', 'formAt'];
 function settingsRows_() {
   return [
     ['Event Name', 'KATAL Property Roadshow', 'Shown at the top of the app.'],
-    ['Admin PIN', String(Math.floor(100000 + Math.random() * 900000)), 'PIN for the admin dashboard. Change it to any number you like (6+ digits recommended).'],
     ['Default Country Code', '+971', 'Country code selected by default on the phone field.'],
     ['List 1 Name', 'My Leads', 'Name of the list of new leads (added, not confirmed yet).'],
     ['List 2 Name', 'Confirmed Guests', 'Name of the list of leads who confirmed they are coming to the event.'],
@@ -115,8 +119,11 @@ function setup() {
   secret_();
   try { ss.setSpreadsheetTimeZone(TZ); } catch (e) { /* ignore */ }
 
+  var legacyPin = legacyAdminPin_(ss);
   setupTab_(ss, T.SETTINGS, settingsRows_());
   migrateSettings_(ss);
+  setupTab_(ss, T.ADMINS, [['Main Admin', legacyPin || String(Math.floor(100000 + Math.random() * 900000)), 'Yes']]);
+  removeSetting_(ss, 'Admin PIN');
   setupTab_(ss, T.AGENTS, [
     ['Test Agent 1', '1111', 'Yes'],
     ['Test Agent 2', '2222', 'Yes'],
@@ -174,6 +181,7 @@ function setup() {
   // Validations (dropdowns) to keep the tabs easy to edit
   var yn = ['Yes', 'No'];
   dropdown_(ss, T.AGENTS, 'active', yn);
+  dropdown_(ss, T.ADMINS, 'active', yn);
   dropdown_(ss, T.QUESTIONS, 'type', TYPE_NAMES);
   dropdown_(ss, T.QUESTIONS, 'skippable', yn);
   dropdown_(ss, T.QUESTIONS, 'active', yn);
@@ -183,7 +191,7 @@ function setup() {
   dropdown_(ss, T.UNITS, 'available', yn);
 
   // Tab order
-  [T.SETTINGS, T.AGENTS, T.QUESTIONS, T.PROJECTS, T.UNITS, T.LEADS, T.NOTES].forEach(function (name, i) {
+  [T.SETTINGS, T.ADMINS, T.AGENTS, T.QUESTIONS, T.PROJECTS, T.UNITS, T.LEADS, T.NOTES].forEach(function (name, i) {
     var sh = ss.getSheetByName(name);
     ss.setActiveSheet(sh);
     ss.moveActiveSheet(i + 1);
@@ -195,8 +203,8 @@ function setup() {
   });
   ss.setActiveSheet(ss.getSheetByName(T.SETTINGS));
 
-  var pinNow = getSettings_().adminPin;
-  var msg = 'Setup complete ✅  Admin PIN: ' + pinNow + '  (change it in the Settings tab).';
+  var firstAdmin = getAdmins_()[0];
+  var msg = 'Setup complete ✅  Admin PIN: ' + (firstAdmin ? firstAdmin.pin : '?') + '  (change it in the Admins tab or the dashboard).';
   Logger.log(msg);
   try { ss.toast(msg, 'KATAL Roadshow', 15); } catch (e) { /* ignore */ }
   return msg;
@@ -229,7 +237,7 @@ function setupTab_(ss, name, sample) {
     if (c[3]) sh.getRange(1, i + 1).setNote(c[3]);
   });
   // plain-text columns (keep leading zeros, stop auto-dates)
-  var textCols = { Settings: ['value'], Agents: ['pin'], Projects: ['handover', 'paymentPlan'], Questions: ['id', 'options', 'showIfAnswers'], Units: ['unitType'] }[name] || [];
+  var textCols = { Settings: ['value'], Agents: ['pin'], Admins: ['pin'], Projects: ['handover', 'paymentPlan'], Questions: ['id', 'options', 'showIfAnswers'], Units: ['unitType'] }[name] || [];
   textCols.forEach(function (k) {
     sh.getRange(2, map[k] + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat('@');
   });
@@ -250,6 +258,22 @@ function setupTab_(ss, name, sample) {
     sh.getRange(2, 1, rows.length, width).setValues(rows);
   }
   return sh;
+}
+
+/** Admin PIN used to live in the Settings tab (v1.0–1.1). */
+function legacyAdminPin_(ss) {
+  var sh = ss.getSheetByName(T.SETTINGS);
+  if (!sh || sh.getLastRow() < 2) return '';
+  var vals = sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
+  for (var i = 1; i < vals.length; i++) if (norm_(vals[i][0]) === 'adminpin') return text_(vals[i][1]);
+  return '';
+}
+
+function removeSetting_(ss, key) {
+  var sh = ss.getSheetByName(T.SETTINGS);
+  if (!sh || sh.getLastRow() < 2) return;
+  var vals = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
+  for (var i = vals.length - 1; i >= 1; i--) if (norm_(vals[i][0]) === norm_(key)) sh.deleteRow(i + 1);
 }
 
 function migrateSettings_(ss) {
@@ -391,13 +415,14 @@ function apiLogin_(req) {
 function apiAdminLogin_(req) {
   var pin = String(req.pin || '').trim();
   throttleCheck_('admin');
-  var s = getSettings_();
-  if (!s.adminPin || !pinEq_(s.adminPin, pin)) {
+  var match = null;
+  getAdmins_().forEach(function (a) { if (!match && a.active && pinEq_(a.pin, pin)) match = a; });
+  if (!match) {
     throttleFail_('admin');
     throw fail_('Wrong admin PIN', 'BAD_PIN');
   }
   throttleClear_('admin');
-  return { ok: true, token: adminToken_(s.adminPin) };
+  return { ok: true, token: adminToken_(match), admin: match.name };
 }
 
 function apiConfig_(req) {
@@ -607,7 +632,7 @@ function apiDashboard_(req) {
 function apiAdminData_(req) {
   requireAdmin_(req.token);
   var tabs = {};
-  [T.SETTINGS, T.AGENTS, T.QUESTIONS, T.PROJECTS, T.UNITS].forEach(function (name) {
+  EDITABLE_.forEach(function (name) {
     tabs[name] = readTable_(name).rows.map(function (r) {
       var o = {};
       COLS[name].forEach(function (c) { o[c[0]] = cellOut_(r[c[0]]); });
@@ -617,22 +642,88 @@ function apiAdminData_(req) {
   return { ok: true, tabs: tabs, types: TYPE_NAMES, matchFields: MATCH_NAMES };
 }
 
+var EDITABLE_ = ['Settings', 'Admins', 'Agents', 'Questions', 'Projects', 'Units'];
+
 function apiAdminSave_(req) {
-  requireAdmin_(req.token);
+  var me = requireAdmin_(req.token);
   var tab = String(req.tab || '');
-  if ([T.SETTINGS, T.AGENTS, T.QUESTIONS, T.PROJECTS, T.UNITS].indexOf(tab) < 0) throw fail_('Unknown tab', 'BAD_REQUEST');
-  var rows = Array.isArray(req.rows) ? req.rows : [];
+  if (EDITABLE_.indexOf(tab) < 0) throw fail_('Unknown tab', 'BAD_REQUEST');
+  var rows = (Array.isArray(req.rows) ? req.rows : []).slice(0, 2000);
+  validateRows_(tab, rows);
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     writeTable_(tab, rows);
+    (Array.isArray(req.renames) ? req.renames : []).forEach(function (rn) {
+      var from = clip_(rn.from, 200), to = clip_(rn.to, 200);
+      if (!from || !to || from === to) return;
+      if (tab === T.AGENTS) { renameLeadsCol_('agent', from, to); renameTableCol_(T.NOTES, 'agent', from, to); }
+      if (tab === T.PROJECTS) renameTableCol_(T.UNITS, 'project', from, to);
+    });
     if (tab === T.QUESTIONS) ensureLeadColumns_(sheet_(T.LEADS));
     var res = { ok: true };
-    if (tab === T.SETTINGS) res.token = adminToken_(getSettings_().adminPin);
+    if (tab === T.ADMINS) {
+      var self = findAdmin_(req.selfName || me.name);
+      if (self && self.active) res.token = adminToken_(self);
+    }
     return res;
   } finally {
     lock.releaseLock();
   }
+}
+
+function validateRows_(tab, rows) {
+  var seen = {};
+  var need = function (cond, msg) { if (!cond) throw fail_(msg, 'INVALID'); };
+  rows.forEach(function (r) {
+    if (tab === T.AGENTS) {
+      var n = clip_(r.name, 200);
+      need(n, 'Every agent needs a name.');
+      need(/^\d{4}$/.test(String(r.pin || '').trim()), 'Agent PIN must be exactly 4 digits (' + n + ').');
+      need(!seen[n.toLowerCase()], 'Two agents have the same name: ' + n);
+      seen[n.toLowerCase()] = true;
+    } else if (tab === T.ADMINS) {
+      var an = clip_(r.name, 200);
+      var ap = String(r.pin || '').trim();
+      need(an, 'Every admin needs a name.');
+      need(/^\d{4,12}$/.test(ap), 'Admin PIN must be 4 to 12 digits (' + an + ').');
+      need(!seen['n:' + an.toLowerCase()], 'Two admins have the same name: ' + an);
+      need(!seen['p:' + normPin_(ap)], 'Two admins have the same PIN. Every admin needs a different PIN.');
+      seen['n:' + an.toLowerCase()] = true;
+      seen['p:' + normPin_(ap)] = true;
+    } else if (tab === T.QUESTIONS) {
+      need(clip_(r.text, 500), 'Every question needs text.');
+    } else if (tab === T.PROJECTS) {
+      var pn = clip_(r.name, 200);
+      need(pn, 'Every project needs a name.');
+      need(!seen[pn.toLowerCase()], 'Two projects have the same name: ' + pn);
+      seen[pn.toLowerCase()] = true;
+    } else if (tab === T.UNITS) {
+      need(clip_(r.project, 200), 'Every unit needs a project.');
+    }
+  });
+  if (tab === T.ADMINS) need(rows.some(function (r) { return yes_(r.active, true); }), 'At least one admin must stay active.');
+}
+
+function renameLeadsCol_(key, from, to) {
+  var sh = sheet_(T.LEADS);
+  var idx = leadIdx_(headerRow_(sh));
+  renameCol_(sh, idx[key], from, to);
+}
+
+function renameTableCol_(tab, key, from, to) {
+  var t = readTable_(tab);
+  renameCol_(t.sheet, t.map[key], from, to);
+}
+
+function renameCol_(sh, colIdx, from, to) {
+  var last = sh.getLastRow();
+  if (colIdx < 0 || last < 2) return;
+  var range = sh.getRange(2, colIdx + 1, last - 1, 1);
+  var vals = range.getValues();
+  var changed = false;
+  vals.forEach(function (v) { if (sameName_(v[0], from)) { v[0] = to; changed = true; } });
+  if (changed) { range.setNumberFormat('@'); range.setValues(vals); }
 }
 
 /* ================================== AUTH ================================== */
@@ -665,8 +756,8 @@ function agentToken_(ag) {
   return 'a:' + encodeURIComponent(ag.name) + ':' + sign_('a|' + ag.name.toLowerCase() + '|' + normPin_(ag.pin));
 }
 
-function adminToken_(pin) {
-  return 'x:admin:' + sign_('x|admin|' + normPin_(pin));
+function adminToken_(ad) {
+  return 'x:' + encodeURIComponent(ad.name) + ':' + sign_('x|' + ad.name.toLowerCase() + '|' + normPin_(ad.pin));
 }
 
 function parseToken_(tok) {
@@ -688,9 +779,10 @@ function requireAgent_(tok) {
 
 function requireAdmin_(tok) {
   var t = parseToken_(tok);
-  var s = getSettings_();
-  if (t.kind !== 'x' || !s.adminPin || adminToken_(s.adminPin) !== tok) throw fail_('Please log in again', 'AUTH');
-  return { admin: true, name: 'Admin' };
+  if (t.kind !== 'x') throw fail_('Please log in again', 'AUTH');
+  var ad = findAdmin_(t.name);
+  if (!ad || !ad.active || adminToken_(ad) !== tok) throw fail_('Please log in again', 'AUTH');
+  return { admin: true, name: ad.name };
 }
 
 function requireAny_(tok) {
@@ -793,7 +885,7 @@ function writeTable_(name, rows) {
     return row;
   });
   var range = sh.getRange(2, 1, data.length, width);
-  var textCols = { Agents: ['pin'], Settings: ['value'], Projects: ['handover'], Questions: ['id'] }[name] || [];
+  var textCols = { Agents: ['pin'], Admins: ['pin'], Settings: ['value'], Projects: ['handover', 'paymentPlan'], Questions: ['id', 'options', 'showIfAnswers'], Units: ['unitType'] }[name] || [];
   textCols.forEach(function (k) {
     if (map[k] >= 0) sh.getRange(2, map[k] + 1, data.length, 1).setNumberFormat('@');
   });
@@ -851,7 +943,6 @@ function getSettings_() {
   readTable_(T.SETTINGS).rows.forEach(function (r) { s[norm_(r.key)] = r.value; });
   return {
     eventName: text_(s.eventname) || 'KATAL Roadshow',
-    adminPin: text_(s.adminpin),
     countryCode: text_(s.defaultcountrycode) || '+971',
     lists: [text_(s.list1name) || 'My Leads', text_(s.list2name) || 'Confirmed Guests', text_(s.list3name) || 'Final Leads'],
     invitationLink: text_(s.invitationlink)
@@ -862,6 +953,19 @@ function getAgents_() {
   return readTable_(T.AGENTS).rows.map(function (r) {
     return { name: text_(r.name), pin: text_(r.pin), active: yes_(r.active, true) };
   }).filter(function (a) { return a.name; });
+}
+
+function getAdmins_() {
+  return readTable_(T.ADMINS).rows.map(function (r) {
+    return { name: text_(r.name), pin: text_(r.pin), active: yes_(r.active, true) };
+  }).filter(function (a) { return a.name && a.pin; });
+}
+
+function findAdmin_(name) {
+  var n = String(name || '').trim().toLowerCase();
+  var all = getAdmins_();
+  for (var i = 0; i < all.length; i++) if (all[i].name.toLowerCase() === n) return all[i];
+  return null;
 }
 
 function findAgent_(name) {

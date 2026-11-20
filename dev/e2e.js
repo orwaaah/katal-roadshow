@@ -4,6 +4,8 @@ const assert = require('assert');
 const SHOTS = process.env.SHOTS || '/tmp/shots';
 const BASE = 'http://localhost:8080/?api=http://localhost:8081/exec';
 const dump = () => fetch('http://localhost:8081/__dump').then(r => r.json());
+const outboxEmpty = page => page.waitForFunction(() => JSON.parse(localStorage.getItem('katal.outbox') || '[]').length === 0, null, { timeout: 25000 });
+const outboxCount = page => page.evaluate(() => JSON.parse(localStorage.getItem('katal.outbox') || '[]').length);
 const leadRow = (d, name) => { const H = d.Leads[0]; const r = d.Leads.find(x => x[H.indexOf('Client Name')] === name); return r && Object.fromEntries(H.map((h, i) => [h, r[i]])); };
 
 (async () => {
@@ -26,6 +28,7 @@ const leadRow = (d, name) => { const H = d.Leads[0]; const r = d.Leads.find(x =>
   for (const d of '1111') await page.locator(`[data-key="${d}"]`).click();
   await page.locator('.cta-card').waitFor();
   await page.locator('.list-tile').first().waitFor();
+  assert.strictEqual(await page.locator('.home-hero .title').textContent(), 'Hello, Test Agent 1');
   await shot('20-home');
 
   // quick add lead 1
@@ -49,11 +52,7 @@ const leadRow = (d, name) => { const H = d.Leads[0]; const r = d.Leads.find(x =>
   await page.locator('#saveBtn').click();
   await page.locator('.done-badge').waitFor();
   await page.locator('[data-act="home"]').click();
-  await page.waitForFunction(() => /All synced/.test(document.querySelector('.pill').textContent), null, { timeout: 15000 }).catch(async e => {
-    console.log('pill:', await page.locator('.pill').textContent());
-    console.log('outbox:', await page.evaluate(() => localStorage.getItem('katal.outbox')));
-    throw e;
-  });
+  await outboxEmpty(page);
   let d = await dump();
   let omar = leadRow(d, 'Omar Haddad');
   assert.ok(omar, 'omar saved');
@@ -115,7 +114,7 @@ const leadRow = (d, name) => { const H = d.Leads[0]; const r = d.Leads.find(x =>
   await page.locator('[data-act="note"]').click();
   await page.locator('.notes li').first().waitFor();
   await shot('29-lead-final');
-  await page.waitForFunction(() => /All synced/.test(document.querySelector('.pill').textContent), null, { timeout: 20000 });
+  await outboxEmpty(page);
   d = await dump();
   omar = leadRow(d, 'Omar Haddad');
   assert.strictEqual(omar['Status'], 'Final Leads');
@@ -150,18 +149,19 @@ const leadRow = (d, name) => { const H = d.Leads[0]; const r = d.Leads.find(x =>
   await page.locator('[data-act="done"]').waitFor();
   assert.match(await page.locator('#units .unit .u-type').first().textContent(), /2BR Apartment/);
   await page.locator('[data-act="done"]').click();
-  await page.locator('.pill.is-offline').waitFor();
+  assert.ok((await outboxCount(page)) > 0, 'queued while offline');
   await shot('30-offline-lead');
   d = await dump();
   assert.strictEqual(leadRow(d, 'Lina Saleh')['Status'], 'My Leads', 'not synced while offline');
   // reload offline
   await page.reload();
   await page.locator('.cta-card').waitFor();
-  assert.match(await page.locator('.pill').textContent(), /pending/);
+  assert.ok((await outboxCount(page)) > 0, 'still queued after reload');
+  assert.strictEqual(await page.locator('.pill').count(), 0, 'no sync UI for agents');
   // back online
   await ctx.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
-  await page.waitForFunction(() => /All synced/.test(document.querySelector('.pill').textContent), null, { timeout: 25000 });
+  await outboxEmpty(page);
   d = await dump();
   const lina = leadRow(d, 'Lina Saleh');
   assert.strictEqual(lina['Status'], 'Final Leads');

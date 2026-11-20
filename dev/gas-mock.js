@@ -45,6 +45,7 @@ class Sheet {
     Object.keys(this.fmt).forEach(k => { const [r, c] = k.split(',').map(Number); nf[r + ',' + (c >= col ? c + 1 : c)] = this.fmt[k]; });
     this.fmt = nf;
   }
+  deleteRow(r) { this.data.splice(r - 1, 1); }
   setFrozenRows() {}
   setColumnWidth() {}
   cell(r, c) { return ((this.data[r - 1] || [])[c - 1]); }

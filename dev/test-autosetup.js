@@ -5,7 +5,7 @@ const G = makeContext(state);
 const r = JSON.parse(G.doPost({ postData: { contents: '{"action":"agents"}' } }).getContent());
 assert.ok(r.ok, JSON.stringify(r));
 assert.strictEqual(r.agents.length, 3);
-assert.strictEqual(state.ss.getSheets().length, 7);
+assert.strictEqual(state.ss.getSheets().length, 8);
 assert.strictEqual(state.props.SETUP_DONE, G.APP_VERSION);
 const g = JSON.parse(G.doGet({ parameter: {} }).getContent());
 assert.ok(g.ok);

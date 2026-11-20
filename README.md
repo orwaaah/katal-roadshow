@@ -4,7 +4,9 @@ Mobile web app for roadshow sales agents. **Frontend:** static site on GitHub Pa
 **Backend + database:** one Google Sheet + Google Apps Script web app (`apps-script/Code.gs`).
 
 - Agent app: `https://orwaaah.github.io/katal-roadshow/`
-- Admin dashboard: `https://orwaaah.github.io/katal-roadshow/admin.html` (Admin PIN in the Settings tab)
+- Admin dashboard: `https://orwaaah.github.io/katal-roadshow/admin.html` (each admin has their own PIN)
+
+Everything is managed from the dashboard: questions (order, answers, show-if, optional), agents, admins, projects, units and settings. The Google Sheet stays as the database; nobody needs to open it.
 
 ## How agents work
 1. **New Lead** → client name + phone (+ optional email) → Save. The lead goes to list 1 (**My Leads**).
@@ -34,7 +36,8 @@ Settings → Pages → Branch: `main` / `(root)` → Save.
 
 | Tab | What it holds | Notes |
 |---|---|---|
-| **Settings** | Event Name, Admin PIN, Default Country Code, List 1/2/3 Name, Invitation Link | Don't rename the names in column A. The list names are what agents and the dashboard show. `{name}` in the Invitation Link is replaced by the client name. |
+| **Settings** | Event Name, Default Country Code, List 1/2/3 Name, Invitation Link | Don't rename the names in column A. The list names are what agents and the dashboard show. `{name}` in the Invitation Link is replaced by the client name. |
+| **Admins** | Admin Name, PIN, Active | Dashboard sign-in. Every admin needs a different PIN (4–12 digits). |
 | **Agents** | Agent Name, PIN, Active | Active = No blocks login. Changing a PIN logs that agent out. |
 | **Questions** | ID, Order, Question, Short Label, Type, Options, Max Picks, Skippable, Show If Question ID, Show If Answers, Active, Show On Dashboard, Match Field | Options & Show-If answers are comma separated. Order can be decimal (4.5). Empty ID is filled automatically. |
 | **Projects** | Project Name, Developer, Location, Handover, Payment Plan, Brochure Link, Active | The 3 `SAMPLE – …` projects are fake — replace them. |
@@ -48,7 +51,7 @@ Match fields: `Location`, `Property Type`, `Unit Type`, `Budget`.
 Agents get the new questions/projects when they reopen or refresh the app.
 
 ## Technical notes
-- API: `doPost` with `Content-Type: text/plain` JSON body `{action, ...}` (no CORS preflight). Actions: `agents, login, config, saveLead, updateLead, checkPhone, myLeads, setLiked, addNote, adminLogin, dashboard, adminData, adminSave`.
+- API: `doPost` with `Content-Type: text/plain` JSON body `{action, ...}` (no CORS preflight). Actions: `agents, login, config, saveLead, updateLead, checkPhone, myLeads, setLiked, addNote, adminLogin, dashboard, adminData, adminSave`. `adminSave` replaces one tab (Settings, Admins, Agents, Questions, Projects, Units); renaming an agent or project also updates their leads/units.
 - PINs are checked on the server. Tokens are HMAC-signed (secret in Script Properties) and include the PIN, so changing a PIN invalidates old sessions. 6 wrong PINs → 10 min lock.
 - An agent can only read/modify their own leads.
 - Offline: every write goes to a local outbox (localStorage) and is sent in order when online (auto-retry every 20 s, on reconnect, on app open). Lead IDs are generated on the phone, so retries never create duplicates.
@@ -57,7 +60,7 @@ Agents get the new questions/projects when they reopen or refresh the app.
 
 ### Local testing
 ```
-node dev/test-backend.js && node dev/test-v11.js && node dev/test-autosetup.js   # backend tests (in-memory Sheet mock)
+node dev/test-backend.js && node dev/test-v11.js && node dev/test-v12.js && node dev/test-autosetup.js   # backend tests (in-memory Sheet mock)
 node dev/server.js                # site on :8080, mock API on :8081
 node dev/e2e.js && node dev/e2e-admin.js   # browser end-to-end tests (need the server running)
 ```
@@ -67,6 +70,6 @@ Open `http://localhost:8080/?api=http://localhost:8081/exec` to use the app agai
 - [x] Phase 1 – Sheet + Apps Script, login, question flow (show-if, skip), offline queue
 - [x] v1.1 – New workflow: quick add → invite → confirm → form; 3 lists with search; lead page (call, WhatsApp, notes); unit matching + liked units
 - [x] Admin dashboard – KPIs, per-agent counts, filters, lead details, Excel export
-- [ ] Admin editors (questions, projects, units, agents, settings) — until then edit the Sheet tabs directly
+- [x] v1.2 – Dashboard editors (questions, agents, admins, projects, units, settings); multiple admins; modern font; agents never see sync status
 
 Third-party: `js/vendor/xlsx.full.min.js` is SheetJS Community Edition 0.18.5 (Apache-2.0), used only for the Excel download.

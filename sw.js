@@ -1,5 +1,5 @@
 /* KATAL Roadshow – service worker: lets the app open with no internet. */
-var VERSION = 'katal-shell-v2';
+var VERSION = 'katal-shell-v3';
 var FONT_CACHE = 'katal-fonts-v1';
 var SHELL = [
   './', './index.html', './css/app.css', './js/config.js', './js/core.js', './js/app.js',

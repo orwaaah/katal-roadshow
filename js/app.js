@@ -6,7 +6,8 @@
   var LS = K.LS, api = K.api, Outbox = K.Outbox, esc = K.esc, I = K.ICONS;
   var root = document.getElementById('app');
 
-  var APP_LABEL = 'v1.1';
+  var APP_LABEL = 'v1.2';
+  var DEFAULT_INVITE_LINK = 'https://orwaaah.github.io/invitation-/';
   var session = LS.get('session', null);      // { token, agent, at }
   var config = LS.get('config', null);        // { eventName, countryCode, lists, invitationLink, questions, projects, units }
   var agentsCache = LS.get('agents', null);   // { eventName, agents }
@@ -23,6 +24,7 @@
     users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0113 0"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.5a6.5 6.5 0 013.5 5.5"/></svg>',
     star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>',
     clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
   });
 
@@ -65,7 +67,7 @@
   function nowIso() { return new Date().toISOString(); }
   function topbar(back, right) {
     return '<div class="topbar">' + (back ? '<button class="icon-btn" data-act="' + back + '" aria-label="Back">' + I.back + '</button>' : brand()) +
-      (back ? brand() : '') + (right != null ? right : '<div id="syncPill">' + pillHtml() + '</div>') + '</div>';
+      (back ? brand() : '') + (right != null ? right : '<span style="width:48px"></span>') + '</div>';
   }
 
   /* =============================== SYNC UI =============================== */
@@ -171,6 +173,7 @@
     }, function (err) {
       leadsPromise = null;
       if (err.code === 'AUTH') forceLogout('Your PIN or name was changed. Please sign in again.');
+      else if (screen === 'lists') paintList();
       throw err;
     });
     return leadsPromise;
@@ -190,7 +193,7 @@
       '<p class="subtitle">Tap your name to sign in.</p></div>' +
       (msg ? '<div class="notice info">' + esc(msg) + '</div>' : '') +
       '<div class="agent-list" id="agentList">' + agentListHtml() + '</div>' +
-      '<div class="home-foot"><span>' + APP_LABEL + '</span><a class="link" href="admin.html">Admin dashboard</a></div>' +
+      '<div class="home-foot"><span>' + APP_LABEL + '</span><span></span></div>' +
       '</section>');
     root.onclick = function (e) {
       var b = e.target.closest('[data-agent]');
@@ -205,7 +208,7 @@
         '<button class="btn btn-ghost btn-block" data-act="retry">Try again</button>';
     }
     if (!agentsCache || !agentsCache.agents) return '<div class="center-msg"><div><div class="spinner"></div>Loading agents…</div></div>';
-    if (!agentsCache.agents.length) return '<div class="notice info">No active agents yet. Add them in the Agents tab of the Google Sheet.</div>';
+    if (!agentsCache.agents.length) return '<div class="notice info">No agents yet. Please contact your manager.</div>';
     return agentsCache.agents.map(function (n) {
       return '<button class="agent-btn" data-agent="' + esc(n) + '"><span class="avatar">' + esc(K.initials(n)) + '</span>' + esc(n) + '<span class="chev">' + I.chev + '</span></button>';
     }).join('');
@@ -304,7 +307,7 @@
     var n = Outbox.count();
     K.confirmSheet({
       title: 'Log out?',
-      text: n ? n + ' change(s) are still waiting to sync. They stay safe on this phone and will sync automatically when online.' : 'You will need your PIN to sign in again.',
+      text: 'You will need your PIN to sign in again.',
       ok: 'Log out', cancel: 'Stay signed in'
     }).then(function (yes) {
       if (!yes) return;
@@ -355,7 +358,6 @@
 
   function goHome() {
     screen = 'home';
-    var first = String(session.agent || '').split(' ')[0];
     var c = counts();
     var dl = draft && K.sameName(draft.agent, session.agent) ? getLead(draft.leadId) : null;
     var tile = function (n, icon) {
@@ -363,12 +365,12 @@
     };
     render('<section class="screen">' +
       topbar() +
-      '<div class="home-hero"><div class="eyebrow">' + esc(eventName()) + '</div><h1 class="title">Hello, ' + esc(first) + '</h1></div>' +
+      '<div class="home-hero"><div class="eyebrow">' + esc(eventName()) + '</div><h1 class="title">Hello, ' + esc(session.agent) + '</h1></div>' +
       (dl ? '<button class="card-btn is-resume" data-act="resume" style="margin:0 0 12px"><span class="ic">' + I.resume + '</span><span><span class="t">Continue form: ' + esc(dl.name) + '</span><br><span class="s">Started ' + esc(K.fmtTime(draft.startedAt)) + ' · not saved yet</span></span><span class="chev">' + I.chev + '</span></button>' : '') +
       '<button class="cta-card" data-act="new"><span class="cta-icon">' + I.plus + '</span><span><span class="cta-title">New Lead</span><br><span class="cta-sub">Name & phone number</span></span></button>' +
       '<button class="search-fake" data-act="search">' + I.search + '<span>Search by name or phone</span></button>' +
       '<div class="tiles">' + tile(1, I.users) + tile(2, I.check) + tile(3, I.star) + '</div>' +
-      '<div class="home-foot"><span>' + esc(session.agent) + ' · ' + APP_LABEL + ' · ' + c.today + ' added today</span><button class="link" data-act="logout">Log out</button></div>' +
+      '<div class="home-foot"><span>' + c.today + ' added today · ' + APP_LABEL + '</span><button class="link" data-act="logout">Log out</button></div>' +
       '</section>');
     root.onclick = function (e) {
       var t = e.target.closest('[data-tab]');
@@ -525,8 +527,11 @@
       '<div class="action-bar" style="flex-direction:column">' +
       '<button class="btn btn-gold btn-block" data-act="invite">' + I.send + ' Send invitation</button>' +
       '<button class="btn btn-primary btn-block" data-act="another">' + I.plus + ' Add another lead</button>' +
-      '<div class="row-links"><button class="link" data-act="open">Open lead</button><button class="link" data-act="form">Fill the form now</button><button class="link" data-act="home">Home</button></div>' +
-      '</div></section>');
+      '<div class="btn-trio">' +
+      '<button class="btn btn-ghost" data-act="open">' + I.users + '<span>Open lead</span></button>' +
+      '<button class="btn btn-ghost" data-act="form">' + I.form + '<span>Fill the form</span></button>' +
+      '<button class="btn btn-ghost" data-act="home">' + I.home + '<span>Home</span></button>' +
+      '</div></div></section>');
     root.onclick = function (e) {
       var a = e.target.closest('[data-act]');
       if (!a) return;
@@ -544,8 +549,7 @@
   function sendInvite(id) {
     var l = getLead(id);
     if (!l) return;
-    var link = (config && config.invitationLink) || '';
-    if (!link) { K.toast('Add the Invitation Link in the Settings tab of the Google Sheet.', 4000); return; }
+    var link = (config && config.invitationLink) || DEFAULT_INVITE_LINK;
     link = link.replace(/\{name\}/g, encodeURIComponent(l.name)).replace(/\{phone\}/g, encodeURIComponent(l.phone))
       .replace(/\{agent\}/g, encodeURIComponent(session.agent));
     try { if (navigator.clipboard) navigator.clipboard.writeText(l.name).catch(function () { /* ignore */ }); } catch (e) { /* ignore */ }
@@ -558,7 +562,7 @@
   function showLists(focusSearch) {
     screen = 'lists';
     render('<section class="screen lists">' +
-      '<div class="topbar"><button class="icon-btn" data-act="home" aria-label="Home">' + I.back + '</button>' + brand() + '<div id="syncPill">' + pillHtml() + '</div></div>' +
+      '<div class="topbar"><button class="icon-btn" data-act="home" aria-label="Home">' + I.back + '</button>' + brand() + '<span style="width:48px"></span></div>' +
       '<div class="search-box">' + I.search + '<input id="q" type="text" inputmode="search" enterkeyhint="search" placeholder="Search by name or phone" autocomplete="off" value="' + esc(nav.q) + '"><button class="clear" data-act="clear" aria-label="Clear search"' + (nav.q ? '' : ' hidden') + '>' + I.close + '</button></div>' +
       '<div class="seg" id="seg"></div>' +
       '<div id="listBody" class="lead-list"></div>' +
@@ -619,6 +623,7 @@
       else rows.sort(function (a, b) { return String((nav.tab === 3 ? b.formAt : b.createdAt) || '').localeCompare(String((nav.tab === 3 ? a.formAt : a.createdAt) || '')); });
     }
     if (!rows.length) {
+      if (!leads.length && leadsPromise) { body.innerHTML = '<div class="center-msg"><div><div class="spinner"></div>Loading…</div></div>'; return; }
       body.innerHTML = '<div class="empty">' + (q ? 'No lead matches “' + esc(nav.q) + '”.' : emptyText(nav.tab)) + '</div>';
       return;
     }
@@ -645,7 +650,6 @@
       var summary = leadSummary(l);
       if (summary) sub += ' · ' + esc(summary);
     }
-    chips += '<span class="chip pending" data-pending-for="' + esc(l.id) + '"' + (pend[l.id] ? '' : ' hidden') + '>' + I.clock + 'Not synced</span>';
     return '<div class="lead-row" data-lead="' + esc(l.id) + '">' +
       '<span class="avatar">' + esc(K.initials(l.name)) + '</span>' +
       '<span class="lr-main"><span class="lr-name">' + esc(l.name) + '</span><span class="lr-sub">' + sub + '</span>' + (chips ? '<span class="lr-chips">' + chips + '</span>' : '') + '</span>' +
@@ -693,10 +697,9 @@
       }).join('') + '</ul>' : '<p class="muted small" style="margin:10px 2px 0">No notes yet.</p>') + '</div>';
 
     render('<section class="screen">' +
-      '<div class="topbar"><button class="icon-btn" data-act="back" aria-label="Back">' + I.back + '</button>' + brand() + '<div id="syncPill">' + pillHtml() + '</div></div>' +
+      '<div class="topbar"><button class="icon-btn" data-act="back" aria-label="Back">' + I.back + '</button>' + brand() + '<span style="width:48px"></span></div>' +
       '<div class="lead-head">' +
       '<span class="chip s' + st + '">' + esc(listName(st)) + '</span>' +
-      '<span class="chip pending" data-pending-for="' + esc(l.id) + '"' + (pendingIds()[l.id] ? '' : ' hidden') + '>' + I.clock + 'Not synced</span>' +
       '<h1 class="title">' + esc(l.name) + '</h1>' +
       '<p class="subtitle">' + esc(l.phone) + (l.email ? '<br>' + esc(l.email) : '') + '</p>' +
       '<div class="timeline">' + tl('Added', l.createdAt) + tl('Invited', l.invitedAt) + tl('Confirmed', l.confirmedAt) + tl('Form', l.formAt) + '</div>' +
@@ -809,7 +812,7 @@
       }
     });
     if (title) title.textContent = m.exact ? 'Matching units' : 'Closest options';
-    if (!shown.length) { box.innerHTML = '<p class="muted small">No available units in the Units tab yet.</p>'; return; }
+    if (!shown.length) { box.innerHTML = '<p class="muted small">No units available yet.</p>'; return; }
     box.innerHTML = '<p class="muted small" style="margin:0 2px 10px">Tick the units the client liked.' + (liked.length ? ' <b>' + liked.length + ' liked</b>' : '') + '</p>' +
       shown.map(function (u) { return unitCardHtml(u, liked); }).join('');
   }
@@ -830,7 +833,7 @@
     screen = 'matches';
     nav.leadId = id;
     render('<section class="screen">' +
-      '<div class="topbar">' + brand() + '<div id="syncPill">' + pillHtml() + '</div></div>' +
+      '<div class="topbar">' + brand() + '</div>' +
       '<div class="q-head"><div class="eyebrow">' + I.check.replace('<svg ', '<svg style="width:14px;height:14px;vertical-align:-2px" ') + ' Form saved · ' + esc(l.name) + '</div>' +
       '<h1 class="q-text" id="unitsTitle">Matching units</h1></div>' +
       '<div class="q-body" id="units"></div>' +
@@ -871,7 +874,7 @@
         answers: answers, skipped: skipped, hist: [], cur: 0
       };
       var first = nextVisible(-1);
-      if (first < 0) { draft = null; return K.toast('There are no active questions in the Questions tab.'); }
+      if (first < 0) { draft = null; return K.toast('There are no questions yet.'); }
       draft.cur = first;
       saveDraft();
       renderStep();
@@ -1014,11 +1017,11 @@
   function answerHtml(q, ans) {
     if (q.type === 'single' || q.type === 'multi') {
       return q.options.map(function (o) { return optHtml(q, o, ''); }).join('') ||
-        '<div class="notice info">This question has no options yet (Questions tab → Options).</div>';
+        '<div class="notice info">This question has no answers yet.</div>';
     }
     if (q.type === 'project') {
       var ps = draft.projects || [];
-      if (!ps.length) return '<div class="notice info">No active projects in the Projects tab.</div>';
+      if (!ps.length) return '<div class="notice info">No projects available.</div>';
       return ps.map(function (p) { return optHtml(q, p.name, [p.location, p.developer].filter(Boolean).join(' · ')); }).join('');
     }
     if (q.type === 'text') return '<input class="input" id="qInput" type="text" autocomplete="off" value="' + esc(ans || '') + '" placeholder="Type the answer">';
