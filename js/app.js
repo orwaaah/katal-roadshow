@@ -6,7 +6,7 @@
   var LS = K.LS, api = K.api, Outbox = K.Outbox, esc = K.esc, I = K.ICONS;
   var root = document.getElementById('app');
 
-  var APP_LABEL = 'v1.3';
+  var APP_LABEL = 'v1.4';
   var DEFAULT_INVITE_LINK = 'https://orwaaah.github.io/invitation-/';
   var session = LS.get('session', null);      // { token, agent, at }
   var config = LS.get('config', null);        // { eventName, countryCode, lists, invitationLink, questions, projects, units }

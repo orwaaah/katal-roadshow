@@ -57,12 +57,13 @@ Agents get the new questions/projects when they reopen or refresh the app.
 - PINs are checked on the server. Tokens are HMAC-signed (secret in Script Properties) and include the PIN, so changing a PIN invalidates old sessions. 6 wrong PINs → 10 min lock.
 - An agent can only read/modify their own leads.
 - Offline: every write goes to a local outbox (localStorage) and is sent in order when online (auto-retry every 20 s, on reconnect, on app open). Lead IDs are generated on the phone, so retries never create duplicates.
-- A service worker caches the app so it opens with no internet.
+- A service worker serves the saved copy instantly (also offline) and downloads updates in the background, so a new version shows on the next open.
+- Server speed: rarely-changing tabs are cached for 10 minutes and the cache is cleared on every dashboard save. Edits typed directly into the Sheet show up within 10 minutes.
 - `js/config.js` holds the only setting: the Apps Script Web app URL.
 
 ### Local testing
 ```
-node dev/test-backend.js && node dev/test-v11.js && node dev/test-v12.js && node dev/test-autosetup.js   # backend tests (in-memory Sheet mock)
+node dev/test-backend.js && node dev/test-v11.js && node dev/test-v12.js && node dev/test-cache.js && node dev/test-autosetup.js   # backend tests (in-memory Sheet mock)
 node dev/server.js                # site on :8080, mock API on :8081
 node dev/e2e.js && node dev/e2e-admin.js   # browser end-to-end tests (need the server running)
 ```
@@ -72,7 +73,10 @@ Open `http://localhost:8080/?api=http://localhost:8081/exec` to use the app agai
 - [x] Phase 1 – Sheet + Apps Script, login, question flow (show-if, skip), offline queue
 - [x] v1.1 – New workflow: quick add → invite → confirm → form; 3 lists with search; lead page (call, WhatsApp, notes); unit matching + liked units
 - [x] Admin dashboard – KPIs, per-agent counts, filters, lead details, Excel export
+- [x] v1.4 – Speed: server keeps settings/agents/questions/projects/units in a 10-minute cache (cleared on every dashboard save); the app opens instantly from the phone and updates in the background; font bundled; dashboard shows the last data instantly
 - [x] v1.3 – Admin agent mode (Switch to agent / Dashboard), KATAL Sales app icon
 - [x] v1.2 – Dashboard editors (questions, agents, admins, projects, units, settings); multiple admins; modern font; agents never see sync status
 
 Third-party: `js/vendor/xlsx.full.min.js` is SheetJS Community Edition 0.18.5 (Apache-2.0), used only for the Excel download.
+
+`fonts/manrope.woff2` is Manrope (SIL Open Font License 1.1), bundled from @fontsource-variable/manrope 5.3.0.

@@ -14,7 +14,7 @@
  *   The URL stays the same.
  ******************************************************************************/
 
-var APP_VERSION = '1.3.0';
+var APP_VERSION = '1.4.0';
 var SHEET_ID = '1ELfScsW78vcNN57lqePrrcCOu9e_HnqQuavI-wQ5tx4'; // the Google Sheet used as the database
 var TZ = 'Asia/Dubai';
 
@@ -117,6 +117,7 @@ function setup() {
   if (!ss) throw new Error('Open this script from the Google Sheet: Extensions → Apps Script.');
   PropertiesService.getScriptProperties().setProperty('SHEET_ID', ss.getId());
   secret_();
+  clearCache_();
   try { ss.setSpreadsheetTimeZone(TZ); } catch (e) { /* ignore */ }
 
   var legacyPin = legacyAdminPin_(ss);
@@ -203,6 +204,7 @@ function setup() {
   });
   ss.setActiveSheet(ss.getSheetByName(T.SETTINGS));
 
+  clearCache_();
   var firstAdmin = getAdmins_()[0];
   var msg = 'Setup complete ✅  Admin PIN: ' + (firstAdmin ? firstAdmin.pin : '?') + '  (change it in the Admins tab or the dashboard).';
   Logger.log(msg);
@@ -261,6 +263,36 @@ function setupTab_(ss, name, sample) {
 }
 
 /** Admin PIN used to live in the Settings tab (v1.0–1.1). */
+/* ---- speed: keep settings / agents / admins / questions / projects / units in memory ----
+ * Reading a tab costs 100–500 ms. These change rarely (only from the dashboard), so they are kept
+ * in the script cache for 10 minutes and cleared on every dashboard save. */
+var MEMO_ = {};
+var CACHE_NAMES_ = ['settings', 'agents', 'admins', 'questions:0', 'questions:1', 'projects:0', 'projects:1', 'units:0', 'units:1'];
+function cacheKey_(name) { return 'c:' + APP_VERSION + ':' + name; }
+function cached_(name, fn) {
+  if (MEMO_[name]) return MEMO_[name];
+  var c = CacheService.getScriptCache();
+  var hit = null;
+  try { hit = c.get(cacheKey_(name)); } catch (e) { /* ignore */ }
+  if (hit) {
+    try { MEMO_[name] = JSON.parse(hit); return MEMO_[name]; } catch (e) { /* rebuild */ }
+  }
+  var out = fn();
+  MEMO_[name] = out;
+  try { c.put(cacheKey_(name), JSON.stringify(out), 600); } catch (e) { /* too big: just skip caching */ }
+  return out;
+}
+function clearCache_() {
+  MEMO_ = {};
+  try { CacheService.getScriptCache().removeAll(CACHE_NAMES_.map(cacheKey_)); } catch (e) { /* ignore */ }
+}
+function getSettings_() { return cached_('settings', readSettings_); }
+function getAgents_() { return cached_('agents', readAgents_); }
+function getAdmins_() { return cached_('admins', readAdmins_); }
+function getQuestions_(all) { return cached_('questions:' + (all ? 1 : 0), function () { return readQuestions_(all); }); }
+function getProjects_(all) { return cached_('projects:' + (all ? 1 : 0), function () { return readProjects_(all); }); }
+function getUnits_(all) { return cached_('units:' + (all ? 1 : 0), function () { return readUnits_(all); }); }
+
 function legacyAdminPin_(ss) {
   var sh = ss.getSheetByName(T.SETTINGS);
   if (!sh || sh.getLastRow() < 2) return '';
@@ -655,6 +687,7 @@ function apiAdminSave_(req) {
   lock.waitLock(30000);
   try {
     writeTable_(tab, rows);
+    clearCache_();
     (Array.isArray(req.renames) ? req.renames : []).forEach(function (rn) {
       var from = clip_(rn.from, 200), to = clip_(rn.to, 200);
       if (!from || !to || from === to) return;
@@ -944,7 +977,7 @@ function parseMatch_(m) {
   return '';
 }
 
-function getSettings_() {
+function readSettings_() {
   var s = {};
   readTable_(T.SETTINGS).rows.forEach(function (r) { s[norm_(r.key)] = r.value; });
   return {
@@ -955,13 +988,13 @@ function getSettings_() {
   };
 }
 
-function getAgents_() {
+function readAgents_() {
   return readTable_(T.AGENTS).rows.map(function (r) {
     return { name: text_(r.name), pin: text_(r.pin), active: yes_(r.active, true) };
   }).filter(function (a) { return a.name; });
 }
 
-function getAdmins_() {
+function readAdmins_() {
   return readTable_(T.ADMINS).rows.map(function (r) {
     return { name: text_(r.name), pin: text_(r.pin), active: yes_(r.active, true) };
   }).filter(function (a) { return a.name && a.pin; });
@@ -983,7 +1016,7 @@ function findAgent_(name) {
 
 function sameName_(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
 
-function getQuestions_(includeInactive) {
+function readQuestions_(includeInactive) {
   var t = readTable_(T.QUESTIONS);
   fixQuestionIds_(t);
   var seen = {};
@@ -1030,7 +1063,7 @@ function fixQuestionIds_(t) {
   });
 }
 
-function getProjects_(includeInactive) {
+function readProjects_(includeInactive) {
   return readTable_(T.PROJECTS).rows.map(function (r) {
     return {
       name: text_(r.name), developer: text_(r.developer), location: text_(r.location),
@@ -1040,7 +1073,7 @@ function getProjects_(includeInactive) {
   }).filter(function (p) { return p.name && (includeInactive || p.active); });
 }
 
-function getUnits_(includeUnavailable) {
+function readUnits_(includeUnavailable) {
   return readTable_(T.UNITS).rows.map(function (r) {
     return {
       project: text_(r.project), propertyType: text_(r.propertyType), unitType: text_(r.unitType),

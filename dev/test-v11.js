@@ -16,6 +16,7 @@ L.fmt = {};
 const st = sheet('Settings');
 st.data = st.data.slice(0, 4); // only the 3 v1 settings
 state.props.SETUP_DONE = '1.0.0';
+G.clearCache_();
 
 let r = call('agents');
 assert.ok(r.ok, JSON.stringify(r));

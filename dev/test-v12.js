@@ -12,6 +12,7 @@ const st = sheet('Settings');
 st.data.splice(2, 0, ['Admin PIN', '972746', 'old']);
 state.ss.sheets = state.ss.sheets.filter(s => s.name !== 'Admins');
 state.props.SETUP_DONE = '1.1.0';
+G.clearCache_();
 let r = call('agents');
 assert.ok(r.ok);
 assert.ok(!st.data.some(row => row[0] === 'Admin PIN'), 'Admin PIN removed from Settings');

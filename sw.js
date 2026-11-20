@@ -1,58 +1,52 @@
-/* KATAL Roadshow – service worker: lets the app open with no internet. */
-var VERSION = 'katal-shell-v6';
-var FONT_CACHE = 'katal-fonts-v1';
+/* KATAL Roadshow – service worker.
+ * Opens instantly from the copy saved on the phone (works with no internet), and quietly
+ * downloads the newest version in the background for the next time the app is opened. */
+var VERSION = 'katal-shell-v7';
 var SHELL = [
-  './', './index.html', './css/app.css', './js/config.js', './js/core.js', './js/app.js',
-  './admin.html', './css/admin.css', './js/admin.js', './manifest.webmanifest', './img/roadshow-64.png', './img/roadshow-192.png', './img/roadshow-180.png'
+  './', './index.html', './admin.html',
+  './css/app.css', './css/admin.css',
+  './js/config.js', './js/core.js', './js/app.js', './js/admin.js',
+  './fonts/manrope.woff2', './manifest.webmanifest',
+  './img/roadshow-64.png', './img/roadshow-180.png', './img/roadshow-192.png'
 ];
 
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(VERSION).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
+  e.waitUntil(caches.open(VERSION).then(function (c) {
+    // cache: 'reload' skips the browser's HTTP cache so a new version really gets the new files
+    return Promise.all(SHELL.map(function (u) {
+      return fetch(new Request(u, { cache: 'reload' })).then(function (r) { if (r.ok) return c.put(u, r); }).catch(function () { /* ignore */ });
+    }));
+  }).then(function () { return self.skipWaiting(); }));
 });
 
 self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== VERSION && k !== FONT_CACHE; }).map(function (k) { return caches.delete(k); }));
+    return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
 
-function withTimeout(p, ms) {
-  return new Promise(function (resolve, reject) {
-    var t = setTimeout(function () { reject(new Error('timeout')); }, ms);
-    p.then(function (r) { clearTimeout(t); resolve(r); }, function (err) { clearTimeout(t); reject(err); });
-  });
-}
-
-// Same-origin files: network first (always newest version), cache as fallback when offline.
-function networkFirst(req) {
-  return caches.open(VERSION).then(function (cache) {
-    return withTimeout(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }), 6000).then(function (res) {
-      if (res && res.ok) cache.put(req.url.split('#')[0].split('?')[0], res.clone());
-      return res;
-    }).catch(function () {
-      var key = req.url.split('#')[0].split('?')[0];
-      return cache.match(key).then(function (hit) {
-        if (hit) return hit;
-        if (req.mode === 'navigate') return cache.match('./index.html').then(function (i) { return i || cache.match('./'); });
-        return Response.error();
-      });
-    });
-  });
-}
-
-// Google Fonts: cache first.
-function cacheFirst(req) {
-  return caches.open(FONT_CACHE).then(function (cache) {
-    return cache.match(req).then(function (hit) {
-      return hit || fetch(req).then(function (res) { cache.put(req, res.clone()); return res; });
-    });
-  });
-}
+function keyOf(url) { return url.split('#')[0].split('?')[0]; }
 
 self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
-  if (url.origin === self.location.origin) { e.respondWith(networkFirst(req)); return; }
-  if (/fonts\.(googleapis|gstatic)\.com$/.test(url.hostname)) e.respondWith(cacheFirst(req));
+  if (url.origin !== self.location.origin) return; // the Google API is never cached here
+  var key = keyOf(req.url);
+  e.respondWith(caches.open(VERSION).then(function (cache) {
+    return cache.match(key).then(function (hit) {
+      var net = fetch(key, { cache: 'no-cache', credentials: 'same-origin' }).then(function (res) {
+        if (res && res.ok) cache.put(key, res.clone());
+        return res;
+      });
+      if (hit) {
+        e.waitUntil(net.catch(function () { /* offline: keep the saved copy */ }));
+        return hit;
+      }
+      return net.catch(function () {
+        if (req.mode === 'navigate') return cache.match(keyOf(self.registration.scope)).then(function (i) { return i || cache.match('./index.html'); });
+        return Response.error();
+      });
+    });
+  }));
 });

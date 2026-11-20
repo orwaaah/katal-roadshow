@@ -1,3 +1,12 @@
+/* Manrope (variable, latin) – bundled so the app opens fast and offline. SIL Open Font License 1.1 */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('../fonts/manrope.woff2') format('woff2-variations'), url('../fonts/manrope.woff2') format('woff2');
+}
+
 /* KATAL Roadshow – shared styles (agent app + admin) */
 :root {
   --bg: #F4F1EB;

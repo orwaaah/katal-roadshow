@@ -113,7 +113,7 @@ function makeContext(state) {
       flush() {}
     },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
-    CacheService: { getScriptCache: () => ({ get: k => cache[k] || null, put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; } }) },
+    CacheService: { getScriptCache: () => ({ get: k => cache[k] || null, put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; }, removeAll: ks => ks.forEach(k => { delete cache[k]; }) }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, tryLock: () => true, releaseLock() {} }) },
     Utilities: {
       computeHmacSha256Signature: (v, k) => Array.from(crypto.createHmac('sha256', k).update(v).digest()).map(b => (b > 127 ? b - 256 : b)),
@@ -135,6 +135,11 @@ function makeContext(state) {
   vm.createContext(ctx);
   const code = fs.readFileSync(path.join(__dirname, '..', 'apps-script', 'Code.gs'), 'utf8');
   vm.runInContext(code, ctx, { filename: 'Code.gs' });
+  // every real Apps Script request starts with fresh globals: emulate that
+  ['doPost', 'doGet'].forEach(fn => {
+    const orig = ctx[fn];
+    ctx[fn] = e => { ctx.MEMO_ = {}; return orig(e); };
+  });
   return ctx;
 }
 

@@ -101,7 +101,7 @@ assert.strictEqual(r.leads[0].notes[0].text, 'Call back Sunday');
 
 // new question → new Leads column inserted before Raw JSON
 const q = sheet('Questions');
-q.set(18, 2, 17); q.set(18, 3, 'How did you hear about us?'); q.set(18, 4, 'Source'); q.set(18, 5, 'Short text');
+q.set(18, 2, 17); q.set(18, 3, 'How did you hear about us?'); q.set(18, 4, 'Source'); q.set(18, 5, 'Short text'); G.clearCache_(); // direct Sheet edit (the dashboard clears it automatically)
 r = call('config', { token: tok1 });
 assert.strictEqual(r.questions[16].id, 'Q15', 'auto id');
 call('saveLead', { token: tok1, lead: Object.assign({}, lead, { id: 'L-test-0003', answers: [{ id: 'Q15', label: 'Source', type: 'text', value: 'Instagram' }] }) });
@@ -112,7 +112,7 @@ assert.strictEqual(sheet('Leads').data[3][H2.indexOf('Source')], 'Instagram');
 assert.strictEqual(sheet('Leads').data[1][H2.indexOf('Raw JSON')].slice(0, 1), '{', 'old rows shifted with the column');
 
 // PIN change invalidates token
-sheet('Agents').set(2, 2, '4444');
+sheet('Agents').set(2, 2, '4444'); G.clearCache_(); // direct Sheet edit (the dashboard clears it automatically)
 assert.strictEqual(call('myLeads', { token: tok1 }).code, 'AUTH');
 
 // admin
@@ -132,7 +132,7 @@ for (let i = 0; i < 6; i++) call('login', { name: 'Test Agent 3', pin: '0000' })
 assert.strictEqual(call('login', { name: 'Test Agent 3', pin: '3333' }).code, 'LOCKED');
 
 // leading zero pin
-sheet('Agents').set(3, 2, '0123');
+sheet('Agents').set(3, 2, '0123'); G.clearCache_(); // direct Sheet edit (the dashboard clears it automatically)
 assert.ok(call('login', { name: 'Test Agent 2', pin: '0123' }).ok);
 
 console.log('✅ backend tests passed');

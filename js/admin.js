@@ -8,6 +8,15 @@
   var loadedAt = null;
   var ed = null;          // editor data { tabs: {...} }
   var view = LS.get('adminView', 'dashboard');
+  var edFresh = false;    // editor data loaded from the server in this session (saves wait for it)
+  // show the last data straight away; fresh data loads in the background
+  (function () {
+    if (!session) return;
+    var c = LS.get('adminCache', null);
+    if (c && c.data) { data = c.data; loadedAt = new Date(c.at); }
+    var e = LS.get('adminEd', null);
+    if (e && e.tabs) ed = { tabs: e.tabs };
+  })();
   var f = { q: '', agent: '', list: '', date: '' };
   var timer = null;
 
@@ -74,7 +83,7 @@
       api('adminLogin', { pin: v }, { timeout: 40000 }).then(function (r) {
         session = { token: r.token, admin: r.admin || 'Admin' };
         LS.set('adminSession', session);
-        data = null; ed = null;
+        data = null; ed = null; edFresh = false;
         shell();
       }, function (err) {
         btn.disabled = false; btn.textContent = 'Sign in';
@@ -108,7 +117,7 @@
     document.getElementById('outBtn').onclick = function () {
       K.confirmSheet({ title: 'Log out of the dashboard?', ok: 'Log out', cancel: 'Cancel' }).then(function (y) {
         if (!y) return;
-        session = null; data = null; ed = null; LS.del('adminSession'); LS.del('adminCache'); showLogin();
+        session = null; data = null; ed = null; edFresh = false; LS.del('adminSession'); LS.del('adminCache'); LS.del('adminEd'); showLogin();
       });
     };
   }
@@ -120,6 +129,7 @@
     setActions('');
     if (!ed) { viewBox().innerHTML = '<div class="center-msg" style="min-height:40vh"><div><div class="spinner"></div>Loading…</div></div>'; return loadEd(); }
     renderEditor();
+    if (!edFresh) loadEd();
   }
 
   /* ============================ AGENT MODE ============================ */
@@ -389,7 +399,10 @@
   function loadEd() {
     return api('adminData', { token: session.token }, { timeout: 45000 }).then(function (r) {
       ed = { tabs: r.tabs };
-      if (view !== 'dashboard') renderEditor();
+      edFresh = true;
+      LS.set('adminEd', { tabs: r.tabs, at: new Date().toISOString() });
+      // repaint with the fresh data unless the admin is in the middle of editing something
+      if (view !== 'dashboard' && !document.querySelector('.modal-bg')) renderEditor();
     }, function (err) {
       if (authFail(err)) return;
       if (view !== 'dashboard') viewBox().innerHTML = '<div class="notice warn" style="margin-top:20px">' + I.warn + '<div>' + esc(err.code === 'NETWORK' ? 'No internet connection.' : err.message) + '</div></div>' +
@@ -401,13 +414,19 @@
   var saving = false;
   function save(tab, rows, extra) {
     if (saving) return Promise.reject(new Error('busy'));
+    if (!edFresh) {
+      K.toast('Getting the latest data… try again in a moment.', 3500);
+      loadEd();
+      return Promise.reject(new Error('stale'));
+    }
     saving = true;
     K.toast('Saving…', 20000);
     return api('adminSave', Object.assign({ token: session.token, tab: tab, rows: rows }, extra || {}), { timeout: 45000 }).then(function (r) {
       saving = false;
       ed.tabs[tab] = rows;
+      LS.set('adminEd', { tabs: ed.tabs, at: new Date().toISOString() });
       if (r.token) { session.token = r.token; LS.set('adminSession', session); }
-      data = null; // dashboard data may have changed (names, lists)
+      // the dashboard refreshes itself in the background next time it is opened
       K.toast('Saved ✓');
       return r;
     }, function (err) {
