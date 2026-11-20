@@ -6,7 +6,7 @@ const r = JSON.parse(G.doPost({ postData: { contents: '{"action":"agents"}' } })
 assert.ok(r.ok, JSON.stringify(r));
 assert.strictEqual(r.agents.length, 3);
 assert.strictEqual(state.ss.getSheets().length, 7);
-assert.strictEqual(state.props.SETUP_DONE, '1.0.0');
+assert.strictEqual(state.props.SETUP_DONE, G.APP_VERSION);
 const g = JSON.parse(G.doGet({ parameter: {} }).getContent());
 assert.ok(g.ok);
 console.log('✅ auto-setup OK');

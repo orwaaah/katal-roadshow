@@ -84,9 +84,10 @@
     count: function () { return this.list().length; }
   };
 
-  var syncing = false, lastSyncError = '';
+  var syncing = false, lastSyncError = '', syncAgain = false;
   function sync() {
-    if (syncing) return Promise.resolve();
+    if (syncing) { syncAgain = true; return Promise.resolve(); }
+    syncAgain = false;
     var ops = Outbox.list();
     if (!ops.length) { lastSyncError = ''; emit('sync', status()); return Promise.resolve(); }
     syncing = true;
@@ -113,10 +114,13 @@
         Outbox.patch(op.id, { tries: (op.tries || 0) + 1, error: err.message });
       }).then(next);
     }
-    return next().then(function () {
+    function done() {
       syncing = false;
       emit('sync', status());
-    }, function () { syncing = false; emit('sync', status()); });
+      // something was saved while we were sending: send it now (unless we are offline)
+      if (syncAgain && !stopped) return sync();
+    }
+    return next().then(done, done);
   }
 
   function status() {

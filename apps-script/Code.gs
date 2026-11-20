@@ -4,17 +4,17 @@
  * ONE-TIME INSTALL
  *   1. Open the Google Sheet → Extensions → Apps Script.
  *   2. Delete everything in Code.gs, paste this whole file, click Save (💾).
- *   3. In the toolbar pick the function "setup" → Run → allow access.
- *   4. Deploy → New deployment → ⚙ Web app →
- *        Execute as: Me   ·   Who has access: Anyone   → Deploy.
- *   5. Copy the "Web app URL" (ends with /exec).
+ *   3. Deploy → New deployment → ⚙ Web app →
+ *        Execute as: Me   ·   Who has access: Anyone   → Deploy → allow access.
+ *   4. Copy the "Web app URL" (ends with /exec).
+ *   The tabs are created automatically on the first request (or run "setup").
  *
  * AFTER PASTING A NEWER VERSION OF THIS CODE
  *   Deploy → Manage deployments → ✏️ (edit) → Version: "New version" → Deploy.
  *   The URL stays the same.
  ******************************************************************************/
 
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.1.0';
 var SHEET_ID = '1ELfScsW78vcNN57lqePrrcCOu9e_HnqQuavI-wQ5tx4'; // the Google Sheet used as the database
 var TZ = 'Asia/Dubai';
 
@@ -82,8 +82,24 @@ var COLS = {
 
 var LEAD_FIXED = [
   ['id', 'Lead ID', 160], ['time', 'Time', 140], ['agent', 'Agent', 150],
-  ['name', 'Client Name', 180], ['phone', 'Phone', 150], ['liked', 'Liked Units', 320]
+  ['name', 'Client Name', 180], ['phone', 'Phone', 150], ['email', 'Email', 200],
+  ['status', 'Status', 150], ['invitedAt', 'Invited At', 140], ['confirmedAt', 'Confirmed At', 140],
+  ['formAt', 'Form Done At', 140], ['liked', 'Liked Units', 320]
 ];
+var LEAD_DATES = ['time', 'invitedAt', 'confirmedAt', 'formAt'];
+
+// Settings rows: [name, default value, help]. Missing rows are added automatically.
+function settingsRows_() {
+  return [
+    ['Event Name', 'KATAL Property Roadshow', 'Shown at the top of the app.'],
+    ['Admin PIN', String(Math.floor(100000 + Math.random() * 900000)), 'PIN for the admin dashboard. Change it to any number you like (6+ digits recommended).'],
+    ['Default Country Code', '+971', 'Country code selected by default on the phone field.'],
+    ['List 1 Name', 'My Leads', 'Name of the list of new leads (added, not confirmed yet).'],
+    ['List 2 Name', 'Confirmed Guests', 'Name of the list of leads who confirmed they are coming to the event.'],
+    ['List 3 Name', 'Final Leads', 'Name of the list of leads who answered the form.'],
+    ['Invitation Link', 'https://orwaaah.github.io/invitation-/', 'The "Send invitation" button opens this link. {name} in the link is replaced by the client name.']
+  ];
+}
 var LEAD_RAW = 'Raw JSON';
 
 /* ================================== SETUP ================================== */
@@ -99,13 +115,8 @@ function setup() {
   secret_();
   try { ss.setSpreadsheetTimeZone(TZ); } catch (e) { /* ignore */ }
 
-  var adminPin = String(Math.floor(100000 + Math.random() * 900000));
-
-  setupTab_(ss, T.SETTINGS, [
-    ['Event Name', 'KATAL Property Roadshow', 'Shown at the top of the app.'],
-    ['Admin PIN', adminPin, 'PIN for the admin dashboard. Change it to any number you like (6+ digits recommended).'],
-    ['Default Country Code', '+971', 'Country code selected by default on the phone field.']
-  ]);
+  setupTab_(ss, T.SETTINGS, settingsRows_());
+  migrateSettings_(ss);
   setupTab_(ss, T.AGENTS, [
     ['Test Agent 1', '1111', 'Yes'],
     ['Test Agent 2', '2222', 'Yes'],
@@ -241,6 +252,25 @@ function setupTab_(ss, name, sample) {
   return sh;
 }
 
+function migrateSettings_(ss) {
+  var sh = ss.getSheetByName(T.SETTINGS);
+  var t = readTable_(T.SETTINGS);
+  var have = {};
+  t.rows.forEach(function (r) { have[norm_(r.key)] = true; });
+  var width = Math.max(sh.getLastColumn(), 3);
+  settingsRows_().forEach(function (row) {
+    if (have[norm_(row[0])]) return;
+    var out = [];
+    for (var i = 0; i < width; i++) out.push('');
+    out[t.map.key] = row[0];
+    out[t.map.value] = row[1];
+    if (t.map.help >= 0) out[t.map.help] = row[2];
+    var r = sh.getLastRow() + 1;
+    sh.getRange(r, 1, 1, width).setNumberFormat('@');
+    sh.getRange(r, 1, 1, width).setValues([out]);
+  });
+}
+
 function styleHeader_(range) {
   range.setFontWeight('bold').setBackground('#1C2733').setFontColor('#FFFFFF')
     .setVerticalAlignment('middle').setWrap(true);
@@ -273,9 +303,7 @@ function ensureSetup_() {
   lock.waitLock(60000);
   try {
     if (props.getProperty('SETUP_DONE') === APP_VERSION) return;
-    var ss = ss_();
-    var missing = [T.SETTINGS, T.AGENTS, T.QUESTIONS, T.PROJECTS, T.UNITS, T.LEADS, T.NOTES].some(function (n) { return !ss.getSheetByName(n); });
-    if (missing) setup();
+    setup(); // safe to re-run: only adds what is missing
     props.setProperty('SETUP_DONE', APP_VERSION);
   } finally {
     lock.releaseLock();
@@ -303,6 +331,7 @@ function doPost(e) {
       saveLead: apiSaveLead_,
       checkPhone: apiCheckPhone_,
       myLeads: apiMyLeads_,
+      updateLead: apiUpdateLead_,
       setLiked: apiSetLiked_,
       addNote: apiAddNote_,
       adminLogin: apiAdminLogin_,
@@ -394,6 +423,8 @@ function apiConfig_(req) {
     agent: who.name || '',
     eventName: s.eventName,
     countryCode: s.countryCode,
+    lists: s.lists,
+    invitationLink: s.invitationLink,
     questions: getQuestions_(false),
     projects: projects,
     units: units,
@@ -410,16 +441,7 @@ function apiSaveLead_(req) {
   var phone = clip_(L.phone, 40);
   if (!name) throw fail_('Client name is missing', 'BAD_REQUEST');
   if (digits_(phone).length < 6) throw fail_('Phone number is missing', 'BAD_REQUEST');
-
-  var answers = (Array.isArray(L.answers) ? L.answers : []).slice(0, 200).map(function (a) {
-    return {
-      id: clip_(a.id, 40), label: clip_(a.label, 200), question: clip_(a.question, 500),
-      type: clip_(a.type, 20), skipped: !!a.skipped, value: cleanValue_(a.value)
-    };
-  });
-  var liked = cleanList_(L.liked);
-  var created = new Date(L.createdAt);
-  if (isNaN(created.getTime()) || created.getTime() > Date.now() + 86400000) created = new Date();
+  var created = when_(L.createdAt) || new Date();
 
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -428,40 +450,61 @@ function apiSaveLead_(req) {
     var headers = ensureLeadColumns_(sh);
     var idx = leadIdx_(headers);
     if (findRow_(sh, idx.id, id) > 0) return { ok: true, id: id, duplicate: true };
-
     var raw = {
-      v: 1, id: id, createdAt: created.toISOString(), receivedAt: new Date().toISOString(),
-      agent: ag.name, name: name, phone: phone, answers: answers, liked: liked,
-      device: clip_(L.device, 200)
+      v: 2, id: id, createdAt: created.toISOString(), receivedAt: new Date().toISOString(),
+      agent: ag.name, name: name, phone: phone, email: clip_(L.email, 200),
+      invitedAt: isoOrEmpty_(L.invitedAt), confirmedAt: isoOrEmpty_(L.confirmedAt), formAt: isoOrEmpty_(L.formAt),
+      answers: cleanAnswers_(L.answers), liked: cleanList_(L.liked), device: clip_(L.device, 200)
     };
-    var byLabel = {};
-    answers.forEach(function (a) {
-      var k = (a.label || a.question || a.id).trim().toLowerCase();
-      var text = answerText_(a);
-      if (text === '') return;
-      byLabel[k] = byLabel[k] ? byLabel[k] + ' / ' + text : text;
-    });
-    var row = [], formats = [];
-    for (var c = 0; c < headers.length; c++) {
-      var h = String(headers[c]).trim();
-      var v = '';
-      var f = '@';
-      if (c === idx.id) v = id;
-      else if (c === idx.time) { v = created; f = 'yyyy-mm-dd hh:mm'; }
-      else if (c === idx.agent) v = ag.name;
-      else if (c === idx.name) v = name;
-      else if (c === idx.phone) v = phone;
-      else if (c === idx.liked) v = liked.join('\n');
-      else if (c === idx.raw) v = JSON.stringify(raw);
-      else if (h) v = byLabel[h.toLowerCase()] || '';
-      row.push(v);
-      formats.push(f);
-    }
-    var r = sh.getLastRow() + 1;
-    var range = sh.getRange(r, 1, 1, headers.length);
-    range.setNumberFormats([formats]);
-    range.setValues([row]);
+    if (raw.answers.length && !raw.formAt) raw.formAt = raw.createdAt;
+    writeLeadRow_(sh, sh.getLastRow() + 1, headers, idx, raw, null, true);
     return { ok: true, id: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Changes an existing lead. patch may contain: name, phone, email, invitedAt, confirmedAt, formAt, answers, liked. */
+function apiUpdateLead_(req) {
+  var ag = requireAgent_(req.token);
+  var id = String(req.leadId || '').trim();
+  var patch = req.patch || {};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = sheet_(T.LEADS);
+    var headers = ensureLeadColumns_(sh);
+    var idx = leadIdx_(headers);
+    var r = findRow_(sh, idx.id, id);
+    if (r < 0) throw fail_('Lead not found yet', 'LEAD_NOT_FOUND');
+    var row = sh.getRange(r, 1, 1, headers.length).getValues()[0];
+    if (!sameName_(row[idx.agent], ag.name)) throw fail_('Not your lead', 'FORBIDDEN');
+    var raw = (idx.raw >= 0 ? parseJson_(row[idx.raw]) : null) || {};
+    // start from what the sheet shows (the admin may have edited cells)
+    raw.id = id;
+    raw.agent = String(row[idx.agent]);
+    raw.name = String(row[idx.name] || raw.name || '');
+    raw.phone = String(row[idx.phone] || raw.phone || '');
+    if (idx.email >= 0) raw.email = String(row[idx.email] || '');
+    LEAD_DATES.forEach(function (k) {
+      if (idx[k] >= 0 && k !== 'time') raw[k] = row[idx[k]] instanceof Date ? row[idx[k]].toISOString() : (raw[k] || '');
+    });
+    if (idx.time >= 0 && row[idx.time] instanceof Date) raw.createdAt = row[idx.time].toISOString();
+    if (patch.name != null && clip_(patch.name, 200)) raw.name = clip_(patch.name, 200);
+    if (patch.phone != null && digits_(patch.phone).length >= 6) raw.phone = clip_(patch.phone, 40);
+    if (patch.email != null) raw.email = clip_(patch.email, 200);
+    ['invitedAt', 'confirmedAt', 'formAt'].forEach(function (k) {
+      if (patch[k] !== undefined) raw[k] = isoOrEmpty_(patch[k]);
+    });
+    var answersChanged = patch.answers !== undefined;
+    if (answersChanged) {
+      raw.answers = cleanAnswers_(patch.answers);
+      if (!raw.formAt) raw.formAt = new Date().toISOString();
+    }
+    if (patch.liked !== undefined) raw.liked = cleanList_(patch.liked);
+    raw.updatedAt = new Date().toISOString();
+    writeLeadRow_(sh, r, headers, idx, raw, row, answersChanged);
+    return { ok: true };
   } finally {
     lock.releaseLock();
   }
@@ -495,35 +538,7 @@ function apiMyLeads_(req) {
 }
 
 function apiSetLiked_(req) {
-  var ag = requireAgent_(req.token);
-  var id = String(req.leadId || '').trim();
-  var liked = cleanList_(req.liked);
-  var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    var sh = sheet_(T.LEADS);
-    var headers = headerRow_(sh);
-    var idx = leadIdx_(headers);
-    var r = findRow_(sh, idx.id, id);
-    if (r < 0) throw fail_('Lead not found yet', 'LEAD_NOT_FOUND');
-    var row = sh.getRange(r, 1, 1, headers.length).getValues()[0];
-    if (!sameName_(row[idx.agent], ag.name)) throw fail_('Not your lead', 'FORBIDDEN');
-    if (idx.liked >= 0) {
-      var cell = sh.getRange(r, idx.liked + 1);
-      cell.setNumberFormat('@');
-      cell.setValue(liked.join('\n'));
-    }
-    if (idx.raw >= 0) {
-      var raw = parseJson_(row[idx.raw]) || {};
-      raw.liked = liked;
-      var rc = sh.getRange(r, idx.raw + 1);
-      rc.setNumberFormat('@');
-      rc.setValue(JSON.stringify(raw));
-    }
-    return { ok: true };
-  } finally {
-    lock.releaseLock();
-  }
+  return apiUpdateLead_({ token: req.token, leadId: req.leadId, patch: { liked: req.liked || [] } });
 }
 
 function apiAddNote_(req) {
@@ -581,6 +596,7 @@ function apiDashboard_(req) {
   return {
     ok: true,
     eventName: getSettings_().eventName,
+    lists: getSettings_().lists,
     leads: leads,
     columns: t.labelCols,
     questions: getQuestions_(true),
@@ -836,7 +852,9 @@ function getSettings_() {
   return {
     eventName: text_(s.eventname) || 'KATAL Roadshow',
     adminPin: text_(s.adminpin),
-    countryCode: text_(s.defaultcountrycode) || '+971'
+    countryCode: text_(s.defaultcountrycode) || '+971',
+    lists: [text_(s.list1name) || 'My Leads', text_(s.list2name) || 'Confirmed Guests', text_(s.list3name) || 'Final Leads'],
+    invitationLink: text_(s.invitationlink)
   };
 }
 
@@ -945,6 +963,21 @@ function ensureLeadColumns_(sh) {
     headers.push(LEAD_RAW);
     idx.raw = headers.length - 1;
   }
+  // add missing fixed columns (e.g. Email, Status… added in a newer version) right after the previous fixed column
+  var prev = -1;
+  LEAD_FIXED.forEach(function (c) {
+    var cur = mapHeaders_(headers, [c])[c[0]];
+    if (cur >= 0) { prev = cur; return; }
+    var col = prev + 2; // 1-based position right after the previous fixed column
+    sh.insertColumnBefore(col);
+    var cell = sh.getRange(1, col);
+    cell.setValue(c[1]);
+    styleHeader_(cell);
+    sh.setColumnWidth(col, c[2]);
+    headers.splice(col - 1, 0, c[1]);
+    prev = col - 1;
+  });
+  idx = leadIdx_(headers);
   var have = {};
   headers.forEach(function (h) { have[h.toLowerCase()] = true; });
   var labels = [];
@@ -987,6 +1020,10 @@ function leadsTable_() {
 function parseLeadRow_(t, row) {
   var idx = t.idx;
   var raw = idx.raw >= 0 ? (parseJson_(row[idx.raw]) || {}) : {};
+  var iso = function (k) {
+    if (idx[k] >= 0) return row[idx[k]] instanceof Date ? row[idx[k]].toISOString() : '';
+    return raw[k] || '';
+  };
   var time = idx.time >= 0 && row[idx.time] instanceof Date ? row[idx.time].toISOString() : (raw.createdAt || '');
   var cells = {};
   t.labelIdx.forEach(function (c) {
@@ -994,17 +1031,23 @@ function parseLeadRow_(t, row) {
     cells[c.label] = v instanceof Date ? Utilities.formatDate(v, TZ, 'yyyy-MM-dd') : String(v == null ? '' : v);
   });
   var likedCell = idx.liked >= 0 ? String(row[idx.liked] || '') : '';
-  return {
+  var lead = {
     id: String(row[idx.id] || raw.id || ''),
     time: time,
     agent: String(idx.agent >= 0 ? row[idx.agent] : raw.agent || ''),
     name: String(idx.name >= 0 ? row[idx.name] : raw.name || ''),
     phone: String(idx.phone >= 0 ? row[idx.phone] : raw.phone || ''),
+    email: String(idx.email >= 0 ? row[idx.email] : raw.email || ''),
+    invitedAt: iso('invitedAt'),
+    confirmedAt: iso('confirmedAt'),
+    formAt: iso('formAt'),
     liked: likedCell ? likedCell.split(/\n+/).map(function (s) { return s.trim(); }).filter(Boolean) : (raw.liked || []),
     answers: Array.isArray(raw.answers) ? raw.answers : [],
     cells: cells,
     notes: []
   };
+  lead.status = statusIndex_(lead);
+  return lead;
 }
 
 function attachNotes_(leads) {
@@ -1031,6 +1074,73 @@ function findRow_(sh, colIdx, value) {
   var vals = sh.getRange(2, colIdx + 1, last - 1, 1).getValues();
   for (var i = vals.length - 1; i >= 0; i--) if (String(vals[i][0]).trim() === value) return i + 2;
   return -1;
+}
+
+function statusIndex_(raw) {
+  if (raw.formAt) return 3;
+  if (raw.confirmedAt) return 2;
+  return 1;
+}
+
+/** Writes one lead (raw object) into row r. Label (question) cells are rebuilt only when answersChanged. */
+function writeLeadRow_(sh, r, headers, idx, raw, oldRow, answersChanged) {
+  var lists = getSettings_().lists;
+  var byLabel = {};
+  (raw.answers || []).forEach(function (a) {
+    var k = (a.label || a.question || a.id || '').trim().toLowerCase();
+    var text = answerText_(a);
+    if (!k || text === '') return;
+    byLabel[k] = byLabel[k] ? byLabel[k] + ' / ' + text : text;
+  });
+  var fixedIdx = {};
+  Object.keys(idx).forEach(function (k) { if (idx[k] >= 0) fixedIdx[idx[k]] = k; });
+  var row = [], formats = [];
+  for (var c = 0; c < headers.length; c++) {
+    var key = fixedIdx[c];
+    var v = '', f = '@';
+    if (key === 'id') v = raw.id;
+    else if (key === 'time') { v = when_(raw.createdAt) || new Date(); f = 'yyyy-mm-dd hh:mm'; }
+    else if (key === 'agent') v = raw.agent;
+    else if (key === 'name') v = raw.name;
+    else if (key === 'phone') v = raw.phone;
+    else if (key === 'email') v = raw.email || '';
+    else if (key === 'status') v = lists[statusIndex_(raw) - 1];
+    else if (key === 'invitedAt' || key === 'confirmedAt' || key === 'formAt') { v = when_(raw[key]) || ''; f = 'yyyy-mm-dd hh:mm'; }
+    else if (key === 'liked') v = (raw.liked || []).join('\n');
+    else if (key === 'raw') v = JSON.stringify(raw);
+    else {
+      var h = String(headers[c]).trim();
+      if (answersChanged || !oldRow) v = h ? (byLabel[h.toLowerCase()] || '') : '';
+      else { v = oldRow[c]; if (v instanceof Date) f = 'yyyy-mm-dd'; }
+    }
+    row.push(v);
+    formats.push(f);
+  }
+  var range = sh.getRange(r, 1, 1, headers.length);
+  range.setNumberFormats([formats]);
+  range.setValues([row]);
+}
+
+function cleanAnswers_(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 200).map(function (a) {
+    return {
+      id: clip_(a.id, 40), label: clip_(a.label, 200), question: clip_(a.question, 500),
+      type: clip_(a.type, 20), match: clip_(a.match, 20), skipped: !!a.skipped, value: cleanValue_(a.value)
+    };
+  });
+}
+
+function when_(v) {
+  if (v instanceof Date) return v;
+  if (!v) return null;
+  var d = new Date(v);
+  if (isNaN(d.getTime()) || d.getTime() > Date.now() + 86400000) return null;
+  return d;
+}
+
+function isoOrEmpty_(v) {
+  var d = when_(v);
+  return d ? d.toISOString() : '';
 }
 
 function answerText_(a) {
