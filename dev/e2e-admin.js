@@ -150,6 +150,29 @@ const call = (action, data) => fetch('http://localhost:8081/exec', { method: 'PO
       assert.ok(cfg.questions.some(q => q.label === 'Source'));
       await page.screenshot({ path: `${SHOTS}/46-settings.png` });
       console.log('settings OK');
+
+      // ---------- Switch to agent and back
+      await page.click('#toAgent');
+      await page.waitForURL(/\/(\?.*)?$/);
+      await page.locator('.home-hero .title', { hasText: 'Hello, Main Admin' }).waitFor();
+      await page.screenshot({ path: `${SHOTS}/48-admin-as-agent.png` });
+      await page.locator('.cta-card').click();
+      await page.fill('#cName', 'Admin VIP Guest');
+      await page.fill('#cPhone', '0507778899');
+      await page.locator('#saveBtn').click();
+      await page.locator('.done-badge').waitFor();
+      await page.waitForFunction(() => JSON.parse(localStorage.getItem('katal.outbox') || '[]').length === 0, null, { timeout: 20000 });
+      d = await dump();
+      const LH2 = d.Leads[0];
+      const ar = d.Leads.find(r => r[LH2.indexOf('Client Name')] === 'Admin VIP Guest');
+      assert.strictEqual(ar[LH2.indexOf('Agent')], 'Main Admin', 'lead saved under the admin name');
+      await page.locator('[data-act="home"]').click();
+      await page.locator('.switch-pill').click();
+      await page.waitForURL(/admin\.html/);
+      await page.click('[data-view="dashboard"]');
+      await page.locator('#agTbl tr[data-agent="Main Admin"]').waitFor();
+      assert.match(await page.locator('#agTbl tr[data-agent="Main Admin"]').textContent(), /Admin/);
+      console.log('switch to agent OK');
     } else {
       await page.click('[data-view="questions"]');
       await page.locator('.ed-item').first().waitFor();

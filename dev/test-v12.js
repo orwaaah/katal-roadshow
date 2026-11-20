@@ -86,3 +86,22 @@ assert.strictEqual(call('config', { token: tokR }).lists[1], 'Coming to the Even
 assert.strictEqual(call('config', { token: tokR }).invitationLink, 'https://orwaaah.github.io/invitation-/');
 
 console.log('✅ v1.2 tests passed');
+
+// ---- v1.3: an admin can work as an agent with the admin token
+(function () {
+  const adm = call('adminLogin', { pin: '246810' });
+  assert.strictEqual(adm.admin, 'Orwah');
+  assert.ok(call('config', { token: adm.token }).ok);
+  assert.ok(call('saveLead', { token: adm.token, lead: { id: 'L-ADM-000001', name: 'VIP Client', phone: '+971501230000' } }).ok);
+  assert.ok(call('updateLead', { token: adm.token, leadId: 'L-ADM-000001', patch: { confirmedAt: new Date().toISOString() } }).ok);
+  const mine = call('myLeads', { token: adm.token });
+  assert.strictEqual(mine.leads.length, 1);
+  assert.strictEqual(mine.leads[0].agent, 'Orwah');
+  const d = call('dashboard', { token: adm.token });
+  assert.ok(d.leads.some(l => l.agent === 'Orwah' && l.status === 2));
+  assert.ok(d.admins.includes('Orwah'));
+  // a real agent cannot touch the admin's lead
+  const tok = call('login', { name: 'Rami Khoury', pin: '1111' }).token;
+  assert.strictEqual(call('updateLead', { token: tok, leadId: 'L-ADM-000001', patch: { confirmedAt: '' } }).code, 'FORBIDDEN');
+  console.log('✅ v1.3 admin-as-agent passed');
+})();

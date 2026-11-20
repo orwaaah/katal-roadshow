@@ -44,7 +44,9 @@ const leadRow = (d, name) => { const H = d.Leads[0]; const r = d.Leads.find(x =>
   const [popup] = await Promise.all([ctx.waitForEvent('page'), page.locator('[data-act="invite"]').click()]);
   assert.ok(popup.url().startsWith('https://orwaaah.github.io/invitation-/'), popup.url());
   await popup.close();
-  assert.ok((await page.evaluate(() => navigator.clipboard.readText())).startsWith('Omar Haddad'), 'name copied');
+  await page.bringToFront();
+  await page.waitForTimeout(200);
+  assert.strictEqual(await page.evaluate(() => navigator.clipboard.readText()), 'Omar Haddad', 'name copied');
   // add another
   await page.locator('[data-act="another"]').click();
   await page.fill('#cName', 'Lina Saleh');

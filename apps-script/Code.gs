@@ -14,7 +14,7 @@
  *   The URL stays the same.
  ******************************************************************************/
 
-var APP_VERSION = '1.2.0';
+var APP_VERSION = '1.3.0';
 var SHEET_ID = '1ELfScsW78vcNN57lqePrrcCOu9e_HnqQuavI-wQ5tx4'; // the Google Sheet used as the database
 var TZ = 'Asia/Dubai';
 
@@ -625,7 +625,8 @@ function apiDashboard_(req) {
     leads: leads,
     columns: t.labelCols,
     questions: getQuestions_(true),
-    agents: getAgents_().map(function (a) { return { name: a.name, active: a.active }; })
+    agents: getAgents_().map(function (a) { return { name: a.name, active: a.active }; }),
+    admins: getAdmins_().filter(function (a) { return a.active; }).map(function (a) { return a.name; })
   };
 }
 
@@ -770,6 +771,11 @@ function parseToken_(tok) {
 
 function requireAgent_(tok) {
   var t = parseToken_(tok);
+  if (t.kind === 'x') {
+    // an admin working as an agent ("Switch to agent"): their leads are saved under the admin's name
+    var ad = requireAdmin_(tok);
+    return { name: ad.name, pin: '', active: true, isAdmin: true };
+  }
   if (t.kind !== 'a') throw fail_('Please log in again', 'AUTH');
   var ag = findAgent_(t.name);
   if (!ag || !ag.active) throw fail_('Please log in again', 'AUTH');

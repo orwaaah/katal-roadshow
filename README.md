@@ -6,6 +6,8 @@ Mobile web app for roadshow sales agents. **Frontend:** static site on GitHub Pa
 - Agent app: `https://orwaaah.github.io/katal-roadshow/`
 - Admin dashboard: `https://orwaaah.github.io/katal-roadshow/admin.html` (each admin has their own PIN)
 
+Admins can tap **Switch to agent** (top of the dashboard) to capture leads under their own name, and **Dashboard** in the agent app to go back.
+
 Everything is managed from the dashboard: questions (order, answers, show-if, optional), agents, admins, projects, units and settings. The Google Sheet stays as the database; nobody needs to open it.
 
 ## How agents work
@@ -70,6 +72,7 @@ Open `http://localhost:8080/?api=http://localhost:8081/exec` to use the app agai
 - [x] Phase 1 – Sheet + Apps Script, login, question flow (show-if, skip), offline queue
 - [x] v1.1 – New workflow: quick add → invite → confirm → form; 3 lists with search; lead page (call, WhatsApp, notes); unit matching + liked units
 - [x] Admin dashboard – KPIs, per-agent counts, filters, lead details, Excel export
+- [x] v1.3 – Admin agent mode (Switch to agent / Dashboard), KATAL Sales app icon
 - [x] v1.2 – Dashboard editors (questions, agents, admins, projects, units, settings); multiple admins; modern font; agents never see sync status
 
 Third-party: `js/vendor/xlsx.full.min.js` is SheetJS Community Edition 0.18.5 (Apache-2.0), used only for the Excel download.

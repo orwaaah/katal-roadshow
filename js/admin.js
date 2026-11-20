@@ -19,6 +19,7 @@
     up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>',
     down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+    swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4L3 8l4 4"/><path d="M3 8h14"/><path d="M17 20l4-4-4-4"/><path d="M21 16H7"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>'
   });
 
@@ -102,7 +103,8 @@
   }
   function setActions(html) {
     var a = document.getElementById('actions');
-    a.innerHTML = html + '<button class="btn btn-quiet" id="outBtn">Log out</button>';
+    a.innerHTML = html + '<button class="btn btn-ghost switch-btn" id="toAgent">' + I.swap + ' Switch to agent</button><button class="btn btn-quiet" id="outBtn">Log out</button>';
+    document.getElementById('toAgent').onclick = switchToAgent;
     document.getElementById('outBtn').onclick = function () {
       K.confirmSheet({ title: 'Log out of the dashboard?', ok: 'Log out', cancel: 'Cancel' }).then(function (y) {
         if (!y) return;
@@ -118,6 +120,23 @@
     setActions('');
     if (!ed) { viewBox().innerHTML = '<div class="center-msg" style="min-height:40vh"><div><div class="spinner"></div>Loading…</div></div>'; return loadEd(); }
     renderEditor();
+  }
+
+  /* ============================ AGENT MODE ============================ */
+  // The admin uses the agent app with their own name; leads are saved under the admin's name.
+  function switchToAgent() {
+    var go = function () {
+      var cur = LS.get('session', null);
+      if (!cur || cur.token !== session.token) LS.set('session', { token: session.token, agent: session.admin || 'Admin', isAdmin: true, at: new Date().toISOString() });
+      location.href = './';
+    };
+    var b = document.getElementById('toAgent');
+    if (b) b.textContent = 'Opening…';
+    api('myLeads', { token: session.token }, { timeout: 30000 }).then(go, function (err) {
+      if (err.code === 'NETWORK') return go();
+      if (b) b.innerHTML = I.swap + ' Switch to agent';
+      K.toast(err.code === 'AUTH' ? 'Agent mode needs the newest server code. Paste the latest code in Apps Script first.' : err.message, 6000);
+    });
   }
 
   /* ============================== DASHBOARD ============================== */
@@ -219,7 +238,8 @@
       '<div class="panel"><div class="panel-head"><h2>Agents</h2><span class="muted">Tap an agent to see only their leads · updated ' + esc(loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) + '</span></div><div class="tbl-wrap"><table class="tbl" id="agTbl"><thead><tr>' +
       '<th>Agent</th><th class="num">Leads</th><th class="num">' + esc(L[0]) + '</th><th class="num">' + esc(L[1]) + '</th><th class="num">' + esc(L[2]) + '</th><th class="num">Today</th></tr></thead><tbody>' +
       agents.map(function (a) {
-        return '<tr data-agent="' + esc(a.name) + '"' + (f.agent === a.name ? ' class="sel"' : '') + '><td class="nm">' + esc(a.name) + '<span class="bar" style="width:' + Math.round(60 * a.total / maxTotal) + 'px"></span></td>' +
+        var isAdm = (data.admins || []).indexOf(a.name) >= 0;
+        return '<tr data-agent="' + esc(a.name) + '"' + (f.agent === a.name ? ' class="sel"' : '') + '><td class="nm">' + esc(a.name) + (isAdm ? ' <span class="chip">Admin</span>' : '') + '<span class="bar" style="width:' + Math.round(60 * a.total / maxTotal) + 'px"></span></td>' +
           '<td class="num"><b>' + cnt(a.total) + '</b></td><td class="num">' + cnt(a.s1) + '</td><td class="num">' + cnt(a.s2) + '</td><td class="num">' + cnt(a.s3) + '</td><td class="num">' + cnt(a.today) + '</td></tr>';
       }).join('') + (agents.length ? '' : '<tr><td colspan="6" class="muted">No agents yet.</td></tr>') +
       '</tbody></table></div></div>' +

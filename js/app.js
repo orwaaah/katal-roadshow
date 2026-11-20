@@ -6,7 +6,7 @@
   var LS = K.LS, api = K.api, Outbox = K.Outbox, esc = K.esc, I = K.ICONS;
   var root = document.getElementById('app');
 
-  var APP_LABEL = 'v1.2';
+  var APP_LABEL = 'v1.3';
   var DEFAULT_INVITE_LINK = 'https://orwaaah.github.io/invitation-/';
   var session = LS.get('session', null);      // { token, agent, at }
   var config = LS.get('config', null);        // { eventName, countryCode, lists, invitationLink, questions, projects, units }
@@ -25,6 +25,7 @@
     star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>',
     edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg>',
+    swap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4L3 8l4 4"/><path d="M3 8h14"/><path d="M17 20l4-4-4-4"/><path d="M21 16H7"/></svg>',
     clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'
   });
 
@@ -193,7 +194,7 @@
       '<p class="subtitle">Tap your name to sign in.</p></div>' +
       (msg ? '<div class="notice info">' + esc(msg) + '</div>' : '') +
       '<div class="agent-list" id="agentList">' + agentListHtml() + '</div>' +
-      '<div class="home-foot"><span>' + APP_LABEL + '</span><span></span></div>' +
+      '<div class="home-foot"><span>' + APP_LABEL + '</span>' + (LS.get('adminSession', null) ? '<a class="link" href="admin.html">Dashboard</a>' : '<span></span>') + '</div>' +
       '</section>');
     root.onclick = function (e) {
       var b = e.target.closest('[data-agent]');
@@ -317,6 +318,7 @@
     });
   }
   function forceLogout(msg) {
+    if (session && session.isAdmin) { LS.del('session'); location.href = 'admin.html'; return; }
     session = null;
     LS.del('session');
     showLogin(msg);
@@ -363,14 +365,16 @@
     var tile = function (n, icon) {
       return '<button class="list-tile" data-tab="' + n + '"><span class="ic">' + icon + '</span><span class="lt-name">' + esc(listName(n)) + '</span><b>' + c[n] + '</b><span class="chev">' + I.chev + '</span></button>';
     };
+    var adminBtn = session.isAdmin ? '<a class="switch-pill" href="admin.html">' + I.swap + 'Dashboard</a>' : null;
     render('<section class="screen">' +
-      topbar() +
+      topbar(null, adminBtn) +
       '<div class="home-hero"><div class="eyebrow">' + esc(eventName()) + '</div><h1 class="title">Hello, ' + esc(session.agent) + '</h1></div>' +
       (dl ? '<button class="card-btn is-resume" data-act="resume" style="margin:0 0 12px"><span class="ic">' + I.resume + '</span><span><span class="t">Continue form: ' + esc(dl.name) + '</span><br><span class="s">Started ' + esc(K.fmtTime(draft.startedAt)) + ' · not saved yet</span></span><span class="chev">' + I.chev + '</span></button>' : '') +
       '<button class="cta-card" data-act="new"><span class="cta-icon">' + I.plus + '</span><span><span class="cta-title">New Lead</span><br><span class="cta-sub">Name & phone number</span></span></button>' +
       '<button class="search-fake" data-act="search">' + I.search + '<span>Search by name or phone</span></button>' +
       '<div class="tiles">' + tile(1, I.users) + tile(2, I.check) + tile(3, I.star) + '</div>' +
-      '<div class="home-foot"><span>' + c.today + ' added today · ' + APP_LABEL + '</span><button class="link" data-act="logout">Log out</button></div>' +
+      '<div class="home-foot"><span>' + c.today + ' added today · ' + APP_LABEL + '</span>' +
+      (session.isAdmin ? '<a class="link" href="admin.html">Back to dashboard</a>' : '<button class="link" data-act="logout">Log out</button>') + '</div>' +
       '</section>');
     root.onclick = function (e) {
       var t = e.target.closest('[data-tab]');
@@ -510,7 +514,11 @@
       createLead(lead);
       showAdded(lead.id);
     }
-    if (!edit) setTimeout(function () { var n = document.getElementById('cName'); if (n) n.focus(); }, 60);
+    if (!edit) setTimeout(function () {
+      var n = document.getElementById('cName');
+      var a = document.activeElement;
+      if (n && (!a || a === document.body)) n.focus();
+    }, 60);
   }
 
   function showAdded(id) {

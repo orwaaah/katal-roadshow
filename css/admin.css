@@ -155,3 +155,4 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
   .ed-acts { flex-direction: column; }
   .mfoot { flex-wrap: wrap; }
 }
+.switch-btn svg { width: 18px; height: 18px; }
