@@ -1,9 +1,9 @@
 /* KATAL Roadshow – service worker: lets the app open with no internet. */
-var VERSION = 'katal-shell-v4';
+var VERSION = 'katal-shell-v5';
 var FONT_CACHE = 'katal-fonts-v1';
 var SHELL = [
   './', './index.html', './css/app.css', './js/config.js', './js/core.js', './js/app.js',
-  './admin.html', './css/admin.css', './js/admin.js', './manifest.webmanifest', './img/favicon.png', './img/icon-192.png', './img/apple-touch-icon.png'
+  './admin.html', './css/admin.css', './js/admin.js', './manifest.webmanifest', './img/roadshow-64.png', './img/roadshow-192.png', './img/roadshow-180.png'
 ];
 
 self.addEventListener('install', function (e) {
